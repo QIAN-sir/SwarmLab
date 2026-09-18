@@ -72,22 +72,23 @@ _STATE_COLOR = {"Normal": "#1f77b4", "Stalled": "#ff7f0e", "Drifting": "#d62728"
 # ★ 后期手动调整：只需改 DRONE_MARKER_SIZE 这一个数。
 #   世界尺寸每帧按相机距离等比自动缩放（size ∝ 距离），故缩放视图时
 #   图标在屏幕上保持同一大小（默认视距下约 3*S 像素）。
-#   球体半径 = S；正方体边长 = 2*S；四棱锥底边 = 2*S、高 = 2*S。
+#   球体半径 = S；正方体边长 = 2*S；三棱锥底 = 2*S、高 = 2*S。
 #   偏小以免遮挡轨迹：建议 1 ~ 3（2 ≈ 默认 6px）。
-DRONE_MARKER_SIZE = 2.0
+DRONE_MARKER_SIZE = 0.5
 # ======================================================================
 
 
 def _marker_geoms(s):
-    """三种状态的世界单位 glyph 几何（统一尺寸 s）：球体 / 正方体 / 四棱锥。"""
+    """三种状态的世界单位 glyph 几何（统一尺寸 s）：球体 / 正方体 / 三棱锥。
+    三棱锥俯视图为三角形，与正方体的方形俯视图明确区分。"""
     sphere = pv.Sphere(radius=s)
     cube = pv.Cube(x_length=2 * s, y_length=2 * s, z_length=2 * s)
-    pts = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s), (0, 0, s)]
-    faces = [4, 0, 1, 2, 3,
-             3, 0, 1, 4,
-             3, 1, 2, 4,
-             3, 2, 3, 4,
-             3, 3, 0, 4]
+    r = s
+    pts = [(0, r, -s), (-0.866 * r, -0.5 * r, -s), (0.866 * r, -0.5 * r, -s), (0, 0, s)]
+    faces = [3, 0, 1, 2,
+             3, 0, 1, 3,
+             3, 1, 2, 3,
+             3, 2, 0, 3]
     pyr = pv.PolyData(pts, faces=faces)
     return sphere, cube, pyr
 
@@ -734,7 +735,7 @@ class MainWindow(QMainWindow):
                 g, color="#ff7f0e", reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Drifting"]
         if idx:
-            # 失控漂移 = 四棱锥
+            # 失控漂移 = 三棱锥（俯视图三角形，区别于锁死的方形）
             g = pv.PolyData(enu[idx]).glyph(geom=pyr_g, scale=False, orient=False)
             self._pv_drone_actors["Drifting"] = self.pview.add_mesh(
                 g, color="#d62728", reset_camera=False)
