@@ -51,6 +51,14 @@ from SwarmLab_py.parameters import build_params                        # noqa: E
 from SwarmLab_py.visualization.map_drawing import (                    # noqa: E402
     draw_buildings, draw_cylinders, set_map_axes)
 
+HAVE_PYVISTA = False
+try:
+    import pyvista as pv                                               # noqa: E402
+    from pyvistaqt import QtInteractor                                 # noqa: E402
+    HAVE_PYVISTA = True
+except Exception:                                                      # noqa: BLE001
+    HAVE_PYVISTA = False
+
 # 故障状态 -> matplotlib marker（与 SwarmViewer 的 ○/□/△ 一致）
 _STATE_MARKER = {"Normal": "o", "Stalled": "s", "Drifting": "^"}
 _STATE_COLOR = {"Normal": "#1f77b4", "Stalled": "#ff7f0e", "Drifting": "#d62728"}
@@ -299,14 +307,25 @@ class MainWindow(QMainWindow):
         vv.setContentsMargins(10, 10, 10, 10)
         vv.setSpacing(10)
         vv.addWidget(self._build_view_controls())
-        self.fig = Figure(figsize=(7, 6))
-        self.canvas = FigureCanvasQTAgg(self.fig)
-        self.canvas.mpl_connect("scroll_event", self._on_scroll)   # 滚轮缩放
-        # 转盘式视角：左键拖拽仅水平(yaw)旋转，XOY 面不上下翻转
-        self.canvas.mpl_connect("button_press_event", self._on_press)
-        self.canvas.mpl_connect("motion_notify_event", self._on_move)
-        self.canvas.mpl_connect("button_release_event", self._on_release)
-        vv.addWidget(self.canvas, stretch=3)
+        self.time_label = QLabel("Simulation time: 0.0 seconds")
+        self.time_label.setAlignment(Qt.AlignCenter)
+        vv.addWidget(self.time_label)
+        self.use_pv = HAVE_PYVISTA
+        if self.use_pv:
+            self.pview = QtInteractor(parent=view)
+            vv.addWidget(self.pview, stretch=3)
+            self.pview.set_background("white")
+            self.fig = None
+            self.canvas = None
+        else:
+            self.pview = None
+            self.fig = Figure(figsize=(7, 6))
+            self.canvas = FigureCanvasQTAgg(self.fig)
+            self.canvas.mpl_connect("scroll_event", self._on_scroll)   # 滚轮缩放
+            self.canvas.mpl_connect("button_press_event", self._on_press)
+            self.canvas.mpl_connect("motion_notify_event", self._on_move)
+            self.canvas.mpl_connect("button_release_event", self._on_release)
+            vv.addWidget(self.canvas, stretch=3)
         self.debug_fig = Figure(figsize=(7, 2))
         self.debug_canvas = FigureCanvasQTAgg(self.debug_fig)
         self.debug_canvas.setVisible(False)
@@ -321,6 +340,11 @@ class MainWindow(QMainWindow):
         self._dragging = False
         self._drag_x = None
         self._drag_y = None
+        self._pv_bld = None
+        self._pv_drone_actors = {}
+        self._pv_trail_actors = {}
+        self._pv_tick = 0
+        self.follow_swarm = True
         self.resize(1500, 900)
 
     # ------------------------------------------------------------------
@@ -485,24 +509,30 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------
     def _build_view_controls(self):
-        """视角控制（主流 OrbitControls 方案，同 RViz/Gazebo/three.js/MATLAB rotate3d）：
-        左键拖拽=旋转、滚轮=缩放、右键=平移（由 matplotlib 3D 导航提供）；
-        另给预设视角与重置按钮，便于快速回到好角度、避免“找不到视角”。"""
+        """视角控制：预设/重置/聚焦集群 + 相机跟随；拖拽旋转、滚轮缩放、平移由渲染后端提供
+        （pyvista=GPU 原生 OrbitControls；matplotlib 回退=限位轨道+滚轮缩放）。"""
         w = QWidget(); h = QHBoxLayout(w)
         h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
         h.addWidget(QLabel("视角:"))
-        for text, (elev, azim) in (("俯视", (90, -90)), ("正视", (0, -90)),
-                                   ("侧视", (0, 0)), ("等轴", (30, -60))):
+        for text, key in (("俯视", "top"), ("正视", "front"), ("侧视", "side"), ("等轴", "iso")):
             b = QPushButton(text)
             b.setFixedWidth(52)
-            b.clicked.connect(lambda _=False, e=elev, a=azim: self._set_view(e, a))
+            b.clicked.connect(lambda _=False, k=key: self._preset(k))
             h.addWidget(b)
         rst = QPushButton("重置")
         rst.setFixedWidth(52)
-        rst.clicked.connect(lambda _=False: self._set_view(30, -60))
+        rst.clicked.connect(lambda _=False: self._reset_view())
         h.addWidget(rst)
-        h.addSpacing(12)
-        h.addWidget(QLabel("左键拖拽=旋转(水平+俯仰,已限位不倒扣)  滚轮=缩放  预设/重置=快速视角"))
+        foc = QPushButton("聚焦集群")
+        foc.setFixedWidth(70)
+        foc.clicked.connect(lambda _=False: self._focus_swarm())
+        h.addWidget(foc)
+        self.follow_checkbox = QCheckBox("相机跟随集群")
+        self.follow_checkbox.setChecked(True)
+        self.follow_checkbox.toggled.connect(self._set_follow)
+        h.addWidget(self.follow_checkbox)
+        h.addSpacing(8)
+        h.addWidget(QLabel("拖拽=旋转  滚轮=缩放  平移=拖动集群入视野"))
         h.addStretch()
         return w
 
@@ -566,6 +596,9 @@ class MainWindow(QMainWindow):
         self.canvas.draw_idle()
 
     def _init_view(self):
+        if self.use_pv:
+            self._pv_init()
+            return
         self.fig.clear()
         self.ax = self.fig.add_subplot(111, projection="3d")
         # 禁用 matplotlib 原生“球式”旋转/平移；改用限位轨道拖拽(yaw+clamp俯仰)+滚轮缩放
@@ -584,29 +617,33 @@ class MainWindow(QMainWindow):
         self._trails = []
 
     def _update_view(self):
-        if self.ax is None or self.controller is None:
+        c = self.controller
+        if c is None:
+            return
+        self.time_label.setText(f"Simulation time: {c.time:.1f} seconds   状态 = {c.current_state}")
+        if self.use_pv:
+            self._pv_update()
+            return
+        if self.ax is None:
             return
         for art in self._scatters + self._trails:
             art.remove()
         self._scatters = []
         self._trails = []
-        c = self.controller
         pos = c.swarm.get_pos_ned()                    # (3,N)
         x, y, z = pos[1, :], pos[0, :], -pos[2, :]     # ENU
         colors = c.swarm.get_colors()                  # (3,N) jet 每机一色
         n = pos.shape[1]
-        # 轨迹尾迹（对应原版 3D 视图的细彩线，见毕设演示视频）
         hist = c.pos_history
         if len(hist) > 1:
             arr = np.asarray(hist)                     # (T,3,N)
-            k = max(1, arr.shape[0] // 600)            # 子采样保性能
+            k = max(1, arr.shape[0] // 600)
             sub = arr[::k]
             for m in range(n):
                 tr = sub[:, :, m]
                 ln, = self.ax.plot(tr[:, 1], tr[:, 0], -tr[:, 2],
                                    color=colors[:, m], lw=0.8, alpha=0.8)
                 self._trails.append(ln)
-        # 当前位姿：jet 每机一色 + 状态 marker ○/□/△（与 SwarmViewer 一致）
         states = [getattr(d.drone_state, "value", d.drone_state) for d in c.swarm.drones]
         for name, marker in _STATE_MARKER.items():
             idx = [i for i, s in enumerate(states) if s == name]
@@ -614,8 +651,134 @@ class MainWindow(QMainWindow):
                 sc = self.ax.scatter(x[idx], y[idx], z[idx], c=colors[:, idx].T,
                                      marker=marker, s=45, depthshade=False)
                 self._scatters.append(sc)
-        self.ax.set_title(f"Simulation time: {c.time:.1f} seconds   状态 = {c.current_state}")
+        if self.follow_swarm:
+            self._apply_limits_swarm()
         self.canvas.draw_idle()
+
+    # ================= pyvista (GPU) 视图 =================
+    def _pv_init(self):
+        self.pview.clear()
+        mp = self.controller.params.map
+        if getattr(mp, "ACTIVE_ENVIRONMENT", False):
+            bn = np.asarray(mp.buildings_north).ravel()
+            be = np.asarray(mp.buildings_east).ravel()
+            bh = np.asarray(mp.buildings_heights).ravel()
+            cubes = [pv.Cube(center=(float(e), float(n), float(h) / 2),
+                             x_length=float(mp.building_width),
+                             y_length=float(mp.building_width),
+                             z_length=float(h))
+                     for n, e, h in zip(bn, be, bh)]
+            if cubes:
+                self._pv_bld = self.pview.add_mesh(pv.merge(cubes), color="lightgray",
+                                                   opacity=0.5, show_edges=False)
+        self._pv_drone_actors = {}
+        self._pv_trail_actors = {}
+        self.pview.reset_camera()
+        self._preset("iso")
+
+    def _pv_update(self):
+        c = self.controller
+        pos = c.swarm.get_pos_ned()
+        n = pos.shape[1]
+        enu = np.vstack([pos[1, :], pos[0, :], -pos[2, :]]).T      # (N,3)
+        colors = c.swarm.get_colors()
+        states = [getattr(d.drone_state, "value", d.drone_state) for d in c.swarm.drones]
+        for a in list(self._pv_drone_actors.values()):
+            self.pview.remove_actor(a, reset_camera=False)
+        self._pv_drone_actors = {}
+        idx = [i for i, s in enumerate(states) if s == "Normal"]
+        if idx:
+            rgb = (colors[:, idx].T * 255).astype(np.uint8)
+            self._pv_drone_actors["Normal"] = self.pview.add_mesh(
+                pv.PolyData(enu[idx]), rgb=rgb, point_size=10,
+                render_points_as_spheres=True, reset_camera=False)
+        idx = [i for i, s in enumerate(states) if s == "Stalled"]
+        if idx:
+            self._pv_drone_actors["Stalled"] = self.pview.add_mesh(
+                pv.PolyData(enu[idx]), color="#ff7f0e", point_size=16,
+                render_points_as_spheres=False, reset_camera=False)
+        idx = [i for i, s in enumerate(states) if s == "Drifting"]
+        if idx:
+            self._pv_drone_actors["Drifting"] = self.pview.add_mesh(
+                pv.PolyData(enu[idx]), color="#d62728", point_size=16,
+                render_points_as_spheres=True, reset_camera=False)
+        # 尾迹（每 5 帧重建一次，降开销）
+        self._pv_tick += 1
+        if self._pv_tick % 5 == 0:
+            for a in list(self._pv_trail_actors.values()):
+                self.pview.remove_actor(a, reset_camera=False)
+            self._pv_trail_actors = {}
+            hist = c.pos_history
+            if len(hist) > 1:
+                arr = np.asarray(hist)
+                k = max(1, arr.shape[0] // 400)
+                sub = arr[::k]
+                for m in range(n):
+                    tr = sub[:, :, m]
+                    et = np.vstack([tr[:, 1], tr[:, 0], -tr[:, 2]]).T
+                    if len(et) < 2:
+                        continue
+                    lines = np.hstack([[2, i, i + 1] for i in range(len(et) - 1)])
+                    self._pv_trail_actors[m] = self.pview.add_mesh(
+                        pv.PolyData(et, lines=lines), color=colors[:, m],
+                        line_width=1.5, reset_camera=False)
+        if self.follow_swarm:
+            self.pview.camera.focal_point = tuple(enu.mean(axis=0))
+        self.pview.update()
+
+    def _preset(self, key):
+        if self.use_pv:
+            if self.pview is None:
+                return
+            {"top": self.pview.view_xy, "front": self.pview.view_xz,
+             "side": self.pview.view_yz, "iso": self.pview.view_isometric}[key]()
+            self.pview.reset_camera_clipping_range()
+            self.pview.update()
+            return
+        self._set_view(*{"top": (90, -90), "front": (0, -90),
+                         "side": (0, 0), "iso": (30, -60)}[key])
+
+    def _reset_view(self):
+        if self.use_pv:
+            self.follow_checkbox.blockSignals(True)
+            self.follow_checkbox.setChecked(False)
+            self.follow_checkbox.blockSignals(False)
+            self.follow_swarm = False
+            self.pview.reset_camera()
+            self.pview.update()
+            return
+        self._set_view(30, -60)
+
+    def _focus_swarm(self):
+        c = self.controller
+        if c is None:
+            return
+        pos = c.swarm.get_pos_ned()
+        enu = np.vstack([pos[1, :], pos[0, :], -pos[2, :]]).T
+        cent = enu.mean(axis=0)
+        if self.use_pv:
+            rad = max(float(np.linalg.norm(enu - cent, axis=1).max()), 5.0) * 2.5
+            direc = np.asarray(self.pview.camera.direction, dtype=float)
+            self.pview.camera.focal_point = tuple(cent)
+            self.pview.camera.position = tuple(cent - direc * rad)
+            self.pview.reset_camera_clipping_range()
+            self.pview.update()
+            return
+        self._apply_limits_swarm()
+        self.canvas.draw_idle()
+
+    def _set_follow(self, on):
+        self.follow_swarm = bool(on)
+
+    def _apply_limits_swarm(self):
+        pos = self.controller.swarm.get_pos_ned()
+        enu = np.vstack([pos[1, :], pos[0, :], -pos[2, :]])
+        mn = enu.min(axis=1); mx = enu.max(axis=1)
+        edge = max(float((mx - mn).max()) / 2 * 1.4, 10.0)
+        ctr = (mn + mx) / 2
+        self.ax.set_xlim(ctr[0] - edge, ctr[0] + edge)
+        self.ax.set_ylim(ctr[1] - edge, ctr[1] + edge)
+        self.ax.set_zlim(max(ctr[2] - edge, 0.0), ctr[2] + edge)
 
     def _update_debug(self):
         c = self.controller

@@ -29,6 +29,8 @@ def test_gui_window_and_live_sim():
         print("[SKIP] 未安装 PySide6，跳过桌面 GUI 测试（pip install PySide6 后复跑）")
         return
     from SwarmLab_py.gui.desktop_app import MainWindow
+    import SwarmLab_py.gui.desktop_app as _da
+    _da.HAVE_PYVISTA = False   # 无头测试走稳定的 matplotlib 回退路径（pyvista 需 GPU/显示）
     app = QApplication.instance() or QApplication([])
     win = MainWindow()
 
