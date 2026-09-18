@@ -690,7 +690,7 @@ class MainWindow(QMainWindow):
         if idx:
             rgb = (colors[:, idx].T * 255).astype(np.uint8)
             self._pv_drone_actors["Normal"] = self.pview.add_mesh(
-                pv.PolyData(enu[idx]), rgb=rgb, point_size=10,
+                pv.PolyData(enu[idx]), scalars=rgb, rgb=True, point_size=10,
                 render_points_as_spheres=True, reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Stalled"]
         if idx:
