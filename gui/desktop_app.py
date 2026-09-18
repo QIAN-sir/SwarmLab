@@ -320,6 +320,7 @@ class MainWindow(QMainWindow):
         self._azim = -60.0         # 水平方位（左键拖拽仅改它）
         self._dragging = False
         self._drag_x = None
+        self._drag_y = None
         self.resize(1500, 900)
 
     # ------------------------------------------------------------------
@@ -501,7 +502,7 @@ class MainWindow(QMainWindow):
         rst.clicked.connect(lambda _=False: self._set_view(30, -60))
         h.addWidget(rst)
         h.addSpacing(12)
-        h.addWidget(QLabel("左键拖拽=水平旋转  滚轮=缩放  预设/重置=切换俯仰"))
+        h.addWidget(QLabel("左键拖拽=旋转(水平+俯仰,已限位不倒扣)  滚轮=缩放  预设/重置=快速视角"))
         h.addStretch()
         return w
 
@@ -514,19 +515,23 @@ class MainWindow(QMainWindow):
         self.ax.view_init(self._elev, self._azim)
         self.canvas.draw_idle()
 
-    # ---- 转盘式拖拽：仅水平(yaw)旋转，XOY 面固定不上下翻转 ----
+    # ---- 限位轨道拖拽：水平 yaw 自由 + 俯仰 clamp[0,90]，XOY 不倒扣、可平滑俯视 ----
     def _on_press(self, event):
         if self.ax is None or event.inaxes is not self.ax or event.button != 1:
             return
         self._dragging = True
         self._drag_x = event.x
+        self._drag_y = event.y
 
     def _on_move(self, event):
-        if not self._dragging or self.ax is None or event.x is None:
+        if not self._dragging or self.ax is None or event.x is None or event.y is None:
             return
         dx = event.x - (self._drag_x if self._drag_x is not None else event.x)
-        self._drag_x = event.x
-        self._azim = (self._azim + dx * 0.5) % 360.0
+        dy = event.y - (self._drag_y if self._drag_y is not None else event.y)
+        self._drag_x, self._drag_y = event.x, event.y
+        self._azim = (self._azim + dx * 0.5) % 360.0            # 水平自由旋转
+        # 俯仰限位 [0,90]：可平滑拖到俯视(90)/平视(0)，但不会翻到地面以下或倒扣
+        self._elev = min(90.0, max(0.0, self._elev + dy * 0.3))
         self.ax.view_init(self._elev, self._azim)
         self.canvas.draw_idle()
 
@@ -563,7 +568,7 @@ class MainWindow(QMainWindow):
     def _init_view(self):
         self.fig.clear()
         self.ax = self.fig.add_subplot(111, projection="3d")
-        # 禁用 matplotlib 原生“球式”旋转/平移；改用转盘式（仅 yaw 拖拽）+ 滚轮缩放
+        # 禁用 matplotlib 原生“球式”旋转/平移；改用限位轨道拖拽(yaw+clamp俯仰)+滚轮缩放
         self.ax.set_navigate(False)
         mp = self.controller.params.map
         if getattr(mp, "ACTIVE_ENVIRONMENT", False):
