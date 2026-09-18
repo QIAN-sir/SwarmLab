@@ -700,9 +700,11 @@ class MainWindow(QMainWindow):
                 render_points_as_spheres=False, reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Drifting"]
         if idx:
+            # 失控漂移 = 三角形（圆锥 glyph，3D 下的 ▲），区别于 Normal 球 / Stalled 方
+            cone = pv.Cone(radius=5.0, height=10.0, direction=(0, 0, 1), center=(0, 0, 0))
+            glyphs = pv.PolyData(enu[idx]).glyph(geom=cone, scale=False, orient=False)
             self._pv_drone_actors["Drifting"] = self.pview.add_mesh(
-                pv.PolyData(enu[idx]), color="#d62728", point_size=16,
-                render_points_as_spheres=True, reset_camera=False)
+                glyphs, color="#d62728", reset_camera=False)
         # 尾迹（每 5 帧重建一次，降开销）
         self._pv_tick += 1
         if self._pv_tick % 5 == 0:
