@@ -301,7 +301,11 @@ class MainWindow(QMainWindow):
         vv.addWidget(self._build_view_controls())
         self.fig = Figure(figsize=(7, 6))
         self.canvas = FigureCanvasQTAgg(self.fig)
-        self.canvas.mpl_connect("scroll_event", self._on_scroll)   # 滚轮缩放（OrbitControls）
+        self.canvas.mpl_connect("scroll_event", self._on_scroll)   # 滚轮缩放
+        # 转盘式视角：左键拖拽仅水平(yaw)旋转，XOY 面不上下翻转
+        self.canvas.mpl_connect("button_press_event", self._on_press)
+        self.canvas.mpl_connect("motion_notify_event", self._on_move)
+        self.canvas.mpl_connect("button_release_event", self._on_release)
         vv.addWidget(self.canvas, stretch=3)
         self.debug_fig = Figure(figsize=(7, 2))
         self.debug_canvas = FigureCanvasQTAgg(self.debug_fig)
@@ -312,6 +316,10 @@ class MainWindow(QMainWindow):
 
         self._scatters = []
         self.ax = None
+        self._elev = 30.0          # 固定俯仰（不随拖拽上下翻转，仅预设/重置可改）
+        self._azim = -60.0         # 水平方位（左键拖拽仅改它）
+        self._dragging = False
+        self._drag_x = None
         self.resize(1500, 900)
 
     # ------------------------------------------------------------------
@@ -493,16 +501,37 @@ class MainWindow(QMainWindow):
         rst.clicked.connect(lambda _=False: self._set_view(30, -60))
         h.addWidget(rst)
         h.addSpacing(12)
-        h.addWidget(QLabel("左键拖拽=旋转  滚轮=缩放  右键=平移"))
+        h.addWidget(QLabel("左键拖拽=水平旋转  滚轮=缩放  预设/重置=切换俯仰"))
         h.addStretch()
         return w
 
     def _set_view(self, elev, azim):
+        self._elev = float(elev)
+        self._azim = float(azim)
         if self.ax is None:
             return
         self._apply_limits()          # 预设/重置同时恢复默认取景
-        self.ax.view_init(elev, azim)
+        self.ax.view_init(self._elev, self._azim)
         self.canvas.draw_idle()
+
+    # ---- 转盘式拖拽：仅水平(yaw)旋转，XOY 面固定不上下翻转 ----
+    def _on_press(self, event):
+        if self.ax is None or event.inaxes is not self.ax or event.button != 1:
+            return
+        self._dragging = True
+        self._drag_x = event.x
+
+    def _on_move(self, event):
+        if not self._dragging or self.ax is None or event.x is None:
+            return
+        dx = event.x - (self._drag_x if self._drag_x is not None else event.x)
+        self._drag_x = event.x
+        self._azim = (self._azim + dx * 0.5) % 360.0
+        self.ax.view_init(self._elev, self._azim)
+        self.canvas.draw_idle()
+
+    def _on_release(self, event):
+        self._dragging = False
 
     def _apply_limits(self):
         mp = self.controller.params.map
@@ -534,7 +563,8 @@ class MainWindow(QMainWindow):
     def _init_view(self):
         self.fig.clear()
         self.ax = self.fig.add_subplot(111, projection="3d")
-        # 保持 matplotlib 3D 导航开启（OrbitControls：拖拽旋转/滚轮缩放/右键平移）
+        # 禁用 matplotlib 原生“球式”旋转/平移；改用转盘式（仅 yaw 拖拽）+ 滚轮缩放
+        self.ax.set_navigate(False)
         mp = self.controller.params.map
         if getattr(mp, "ACTIVE_ENVIRONMENT", False):
             if mp.building_shape == "rectangle":
@@ -542,7 +572,7 @@ class MainWindow(QMainWindow):
             elif mp.building_shape == "cylinder":
                 draw_cylinders(self.ax, mp)
         self._apply_limits()
-        self.ax.view_init(30, -60)
+        self.ax.view_init(self._elev, self._azim)
         self.ax.set_xlabel("Y position [m]"); self.ax.set_ylabel("X position [m]")
         self.ax.set_zlabel("Z position [m]")
         self._scatters = []
