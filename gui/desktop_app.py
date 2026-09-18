@@ -34,7 +34,8 @@ from PySide6.QtCore import Qt, QTimer, Signal                          # noqa: E
 from PySide6.QtGui import QPainter, QPen, QColor, QFont                # noqa: E402
 from PySide6.QtWidgets import (                                        # noqa: E402
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QGroupBox, QRadioButton, QSlider, QCheckBox, QSpinBox, QLabel, QSizePolicy)
+    QGroupBox, QRadioButton, QSlider, QCheckBox, QSpinBox, QLabel, QSizePolicy,
+    QPushButton)
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg       # noqa: E402
 from matplotlib.figure import Figure                                   # noqa: E402
@@ -264,9 +265,12 @@ class MainWindow(QMainWindow):
 
         # ---------------- 控制面板（复刻原版两列 + 底部开关）----------------
         panel = QWidget()
-        panel.setFixedWidth(430)
+        panel.setFixedWidth(520)
         pv = QVBoxLayout(panel)
+        pv.setContentsMargins(14, 14, 14, 14)
+        pv.setSpacing(12)
         cols = QHBoxLayout()
+        cols.setSpacing(28)
         pv.addLayout(cols)
         cols.addWidget(self._build_left_column())
         cols.addWidget(self._build_right_column())
@@ -287,6 +291,9 @@ class MainWindow(QMainWindow):
         # ---------------- 3D 视图 + 调试视图 ----------------
         view = QWidget()
         vv = QVBoxLayout(view)
+        vv.setContentsMargins(10, 10, 10, 10)
+        vv.setSpacing(10)
+        vv.addWidget(self._build_view_controls())
         self.fig = Figure(figsize=(7, 6))
         self.canvas = FigureCanvasQTAgg(self.fig)
         vv.addWidget(self.canvas, stretch=3)
@@ -299,7 +306,7 @@ class MainWindow(QMainWindow):
 
         self._scatters = []
         self.ax = None
-        self.resize(1280, 760)
+        self.resize(1500, 900)
 
     # ------------------------------------------------------------------
     def _center_label(self, text, bold=False):
@@ -313,10 +320,12 @@ class MainWindow(QMainWindow):
         s = QSlider(Qt.Horizontal)
         s.setRange(lo, hi); s.setValue(val)
         s.setTickPosition(QSlider.TicksBelow); s.setTickInterval(max(1, (hi - lo) // 10))
+        s.setMinimumHeight(26)
         return s
 
     def _build_left_column(self):
         w = QWidget(); v = QVBoxLayout(w)
+        v.setContentsMargins(4, 4, 4, 4); v.setSpacing(10)
         v.addWidget(self._center_label("类型选择", bold=True))
 
         g = QGroupBox("无人机类型"); gv = QVBoxLayout(g)
@@ -340,6 +349,9 @@ class MainWindow(QMainWindow):
         v.addWidget(self._center_label("无人机失控比例设置", bold=True))
         self.loss_slider = self._slider(0, 60, 20)
         v.addWidget(self.loss_slider)
+        self.loss_label = self._center_label("20 %")
+        self.loss_slider.valueChanged.connect(lambda v_: self.loss_label.setText(f"{v_} %"))
+        v.addWidget(self.loss_label)
 
         v.addWidget(self._center_label("地图设置", bold=True))
         self.map_checkbox = QCheckBox("显示地图障碍"); self.map_checkbox.setChecked(True)
@@ -353,6 +365,7 @@ class MainWindow(QMainWindow):
 
     def _build_right_column(self):
         w = QWidget(); v = QVBoxLayout(w)
+        v.setContentsMargins(4, 4, 4, 4); v.setSpacing(10)
         v.addWidget(self._center_label("集群参数设置", bold=True))
 
         v.addWidget(self._center_label("无人机数量设置", bold=True))
@@ -365,10 +378,16 @@ class MainWindow(QMainWindow):
         v.addWidget(self._center_label("无人机间距设置 [m]", bold=True))
         self.dref_slider = self._slider(5, 15, 10)
         v.addWidget(self.dref_slider)
+        self.dref_label = self._center_label("10 m")
+        self.dref_slider.valueChanged.connect(lambda v_: self.dref_label.setText(f"{v_} m"))
+        v.addWidget(self.dref_label)
 
         v.addWidget(self._center_label("无人机速度设置 [m/s]", bold=True))
         self.vref_slider = self._slider(2, 8, 5)
         v.addWidget(self.vref_slider)
+        self.vref_label = self._center_label("5 m/s")
+        self.vref_slider.valueChanged.connect(lambda v_: self.vref_label.setText(f"{v_} m/s"))
+        v.addWidget(self.vref_label)
 
         v.addWidget(self._center_label("仿真参数设置", bold=True))
         row = QHBoxLayout(); row.addStretch()
@@ -438,9 +457,47 @@ class MainWindow(QMainWindow):
                 self._update_debug()
 
     # ------------------------------------------------------------------
+    def _build_view_controls(self):
+        """视角控制：预设按钮 + 仰角/方位滑杆（禁用自由拖拽后，用它稳定地换左/右/上/下视角）。"""
+        w = QWidget(); h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
+        h.addWidget(QLabel("视角:"))
+        for text, (elev, azim) in (("俯视", (90, -90)), ("正视", (0, -90)),
+                                   ("侧视", (0, 0)), ("等轴", (30, -60))):
+            b = QPushButton(text)
+            b.setFixedWidth(52)
+            b.clicked.connect(lambda _=False, e=elev, a=azim: self._set_view(e, a))
+            h.addWidget(b)
+        h.addSpacing(14)
+        h.addWidget(QLabel("仰角"))
+        self.elev_slider = QSlider(Qt.Horizontal)
+        self.elev_slider.setRange(-90, 90); self.elev_slider.setValue(30)
+        self.elev_slider.valueChanged.connect(self._apply_view)
+        h.addWidget(self.elev_slider)
+        h.addWidget(QLabel("方位"))
+        self.azim_slider = QSlider(Qt.Horizontal)
+        self.azim_slider.setRange(-180, 180); self.azim_slider.setValue(-60)
+        self.azim_slider.valueChanged.connect(self._apply_view)
+        h.addWidget(self.azim_slider)
+        return w
+
+    def _set_view(self, elev, azim):
+        self.elev_slider.blockSignals(True); self.azim_slider.blockSignals(True)
+        self.elev_slider.setValue(int(elev)); self.azim_slider.setValue(int(azim))
+        self.elev_slider.blockSignals(False); self.azim_slider.blockSignals(False)
+        self._apply_view()
+
+    def _apply_view(self, _=None):
+        if self.ax is None:
+            return
+        self.ax.view_init(self.elev_slider.value(), self.azim_slider.value())
+        self.canvas.draw_idle()
+
     def _init_view(self):
         self.fig.clear()
         self.ax = self.fig.add_subplot(111, projection="3d")
+        self.ax.set_navigate(False)   # 禁用自由拖拽旋转/平移，避免“整个空间乱转”；改用视角控件
+        self.ax.view_init(self.elev_slider.value(), self.azim_slider.value())
         mp = self.controller.params.map
         if getattr(mp, "ACTIVE_ENVIRONMENT", False):
             if mp.building_shape == "rectangle":
