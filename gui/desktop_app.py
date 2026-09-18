@@ -315,6 +315,8 @@ class MainWindow(QMainWindow):
             self.pview = QtInteractor(parent=view)
             vv.addWidget(self.pview, stretch=3)
             self.pview.set_background("white")
+            # 地形交互风格：自由旋转时锁定世界 Z 为 up，地面保持水平（类似 matplotlib 3D），不滚转斜置
+            self.pview.enable_terrain_style()
             self.fig = None
             self.canvas = None
         else:
