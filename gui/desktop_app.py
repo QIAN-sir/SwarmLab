@@ -673,7 +673,6 @@ class MainWindow(QMainWindow):
                                                    opacity=0.5, show_edges=False)
         self._pv_drone_actors = {}
         self._pv_trail_actors = {}
-        self.pview.reset_camera()
         self._preset("iso")
 
     def _pv_update(self):
@@ -726,14 +725,33 @@ class MainWindow(QMainWindow):
             self.pview.camera.focal_point = tuple(enu.mean(axis=0))
         self.pview.update()
 
+    def _cam_set(self, d, up):
+        """设置相机：焦点=集群质心，位置=质心+方向*距离，显式 view_up，避免地图斜置。"""
+        c = self.controller
+        pos = c.swarm.get_pos_ned()
+        enu = np.vstack([pos[1, :], pos[0, :], -pos[2, :]]).T
+        cent = enu.mean(axis=0)
+        mp = c.params.map
+        dist = mp.width * 0.9 if getattr(mp, "ACTIVE_ENVIRONMENT", False) else 120.0
+        d = np.asarray(d, dtype=float); d = d / np.linalg.norm(d)
+        cam = self.pview.camera
+        cam.focal_point = tuple(cent)
+        cam.position = tuple(cent + d * dist)
+        cam.view_up = tuple(up)
+        self.pview.reset_camera_clipping_range()
+        self.pview.update()
+
     def _preset(self, key):
         if self.use_pv:
             if self.pview is None:
                 return
-            {"top": self.pview.view_xy, "front": self.pview.view_xz,
-             "side": self.pview.view_yz, "iso": self.pview.view_isometric}[key]()
-            self.pview.reset_camera_clipping_range()
-            self.pview.update()
+            # 方向/up 选取保证建筑网格在画面中“横平竖直”，不斜置
+            views = {"top": ((0, 0, 1), (0, 1, 0)),
+                     "front": ((0, -1, 0.2), (0, 0, 1)),
+                     "side": ((1, 0, 0.2), (0, 0, 1)),
+                     "iso": ((0, -1, 0.7), (0, 0, 1))}
+            d, up = views[key]
+            self._cam_set(d, up)
             return
         self._set_view(*{"top": (90, -90), "front": (0, -90),
                          "side": (0, 0), "iso": (30, -60)}[key])
@@ -744,8 +762,7 @@ class MainWindow(QMainWindow):
             self.follow_checkbox.setChecked(False)
             self.follow_checkbox.blockSignals(False)
             self.follow_swarm = False
-            self.pview.reset_camera()
-            self.pview.update()
+            self._preset("iso")
             return
         self._set_view(30, -60)
 
