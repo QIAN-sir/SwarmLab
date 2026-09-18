@@ -690,20 +690,21 @@ class MainWindow(QMainWindow):
         idx = [i for i, s in enumerate(states) if s == "Normal"]
         if idx:
             rgb = (colors[:, idx].T * 255).astype(np.uint8)
+            pd = pv.PolyData(enu[idx]); pd.point_data["rgb"] = rgb
+            g = pd.glyph(geom=pv.Circle(radius=1.6), scale=False, orient=False)
             self._pv_drone_actors["Normal"] = self.pview.add_mesh(
-                pv.PolyData(enu[idx]), scalars=rgb, rgb=True, point_size=10,
-                render_points_as_spheres=True, reset_camera=False)
+                g, scalars="rgb", rgb=True, reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Stalled"]
         if idx:
-            # 动力锁死 = 立方体 glyph（世界单位，与 Drifting 同尺寸）
-            cube = pv.Cube(x_length=5.0, y_length=5.0, z_length=5.0)
-            g = pv.PolyData(enu[idx]).glyph(geom=cube, scale=False, orient=False)
+            # 动力锁死 = 平面正方形 glyph（2D □，非正方体）
+            sq = pv.Plane(i_size=3.6, j_size=3.6)
+            g = pv.PolyData(enu[idx]).glyph(geom=sq, scale=False, orient=False)
             self._pv_drone_actors["Stalled"] = self.pview.add_mesh(
                 g, color="#ff7f0e", reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Drifting"]
         if idx:
-            # 失控漂移 = 简单平面三角形 glyph（与 Stalled 同尺寸，仅略大于 Normal）
-            r = 3.0
+            # 失控漂移 = 简单平面三角形 glyph（缩小，仅略大于正常）
+            r = 2.0
             tri = pv.PolyData([(0, r, 0), (-0.866 * r, -0.5 * r, 0), (0.866 * r, -0.5 * r, 0)],
                               faces=[3, 0, 1, 2])
             g = pv.PolyData(enu[idx]).glyph(geom=tri, scale=False, orient=False)
