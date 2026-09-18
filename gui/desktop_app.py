@@ -68,11 +68,13 @@ _STATE_COLOR = {"Normal": "#1f77b4", "Stalled": "#ff7f0e", "Drifting": "#d62728"
 # 实时仿真控制器（逐步复刻 runner 主循环，参数来自实时控件）
 # ======================================================================
 # ======================================================================
-# 无人机图标尺寸（世界单位，三种类型统一大小）
+# 无人机图标尺寸（屏幕恒定：不随视图放大/缩小而变大变小）
 # ★ 后期手动调整：只需改 DRONE_MARKER_SIZE 这一个数。
+#   世界尺寸每帧按相机距离等比自动缩放（size ∝ 距离），故缩放视图时
+#   图标在屏幕上保持同一大小（默认视距下约 3*S 像素）。
 #   球体半径 = S；正方体边长 = 2*S；四棱锥底边 = 2*S、高 = 2*S。
-#   地图宽约 300 m，取值越大越夸张，建议 0.5 ~ 3。
-DRONE_MARKER_SIZE = 1.5
+#   偏小以免遮挡轨迹：建议 1 ~ 3（2 ≈ 默认 6px）。
+DRONE_MARKER_SIZE = 2.0
 # ======================================================================
 
 
@@ -370,6 +372,7 @@ class MainWindow(QMainWindow):
         self._pv_trail_actors = {}
         self._pv_tick = 0
         self.follow_swarm = True
+        self._cam_d0 = 270.0        # 默认视距（DRONE_MARKER_SIZE 的参考距离）
         self.resize(1500, 900)
 
     # ------------------------------------------------------------------
@@ -710,7 +713,12 @@ class MainWindow(QMainWindow):
         for a in list(self._pv_drone_actors.values()):
             self.pview.remove_actor(a, reset_camera=False)
         self._pv_drone_actors = {}
-        sphere_g, cube_g, pyr_g = _marker_geoms(DRONE_MARKER_SIZE)
+        # 屏幕恒定尺寸：世界尺寸 ∝ 相机距离，故缩放视图时图标屏幕上不变大变小
+        cam = self.pview.camera
+        d = float(np.linalg.norm(np.asarray(cam.position) - np.asarray(cam.focal_point)))
+        msz = DRONE_MARKER_SIZE * (d / max(getattr(self, "_cam_d0", 270.0), 1e-6))
+        msz = min(max(msz, 0.3), 10.0)
+        sphere_g, cube_g, pyr_g = _marker_geoms(msz)
         idx = [i for i, s in enumerate(states) if s == "Normal"]
         if idx:
             rgb = (colors[:, idx].T * 255).astype(np.uint8)
@@ -730,9 +738,9 @@ class MainWindow(QMainWindow):
             g = pv.PolyData(enu[idx]).glyph(geom=pyr_g, scale=False, orient=False)
             self._pv_drone_actors["Drifting"] = self.pview.add_mesh(
                 g, color="#d62728", reset_camera=False)
-        # 尾迹（每 5 帧重建一次，降开销）
+        # 尾迹（每 2 帧重建一次，降开销）
         self._pv_tick += 1
-        if self._pv_tick % 5 == 0:
+        if self._pv_tick % 2 == 0:
             for a in list(self._pv_trail_actors.values()):
                 self.pview.remove_actor(a, reset_camera=False)
             self._pv_trail_actors = {}
@@ -763,6 +771,7 @@ class MainWindow(QMainWindow):
         cent = enu.mean(axis=0)
         mp = c.params.map
         dist = mp.width * 0.9 if getattr(mp, "ACTIVE_ENVIRONMENT", False) else 120.0
+        self._cam_d0 = dist          # 记录默认视距，供图标屏幕恒定缩放参考
         d = np.asarray(d, dtype=float); d = d / np.linalg.norm(d)
         cam = self.pview.camera
         cam.focal_point = tuple(cent)
