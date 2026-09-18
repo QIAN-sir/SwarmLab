@@ -555,43 +555,53 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
-## Stage 3 —— GUI（Streamlit + Plotly）重做完成
+## Stage 3 —— GUI 重做完成（最终框架：PySide6 桌面）
 
-**日期**：2026-09-18　**状态**：✅ 完成（`test_gui` AppTest 1/1；全量 **76/76**）
-**框架**：Web（Streamlit 1.64 + Plotly 7.1，经用户确认）。严格对照附录 A 的接口与导入约定。
+**日期**：2026-09-18　**状态**：✅ 完成（`test_gui` PySide6 offscreen 1/1；全量 **76/76**）
+**框架演进**：先试 Web（Streamlit+Plotly）→ 用户提供**原版 GUI_swarm 面板截图**与**运行中实时控制**需求后，
+改为 **PySide6 桌面**（`gui/desktop_app.py`）；Streamlit 版 `gui/app.py` 已删除（git `3a229b2` 可找回）。
+严格对照附录 A 的接口与导入约定。
 
-### 新增文件（3）
+### 新增/修改文件
 
 | Python 文件 | 对应 MATLAB | 说明 |
 |---|---|---|
-| `gui/__init__.py` | — | 包说明 + 启动命令 |
-| `gui/app.py` | `examples/GUI_swarm.mlapp` + 主循环 | Streamlit 前端：侧边栏参数/故障时间表 → 运行 → 3D 回放(Plotly) + 轨迹/性能/碰撞(复用 matplotlib 出图) |
-| `tests/test_gui.py` | — | Streamlit `AppTest` headless（初始渲染 + 点击运行 + 概览指标） |
+| `gui/desktop_app.py`（新增） | `examples/GUI_swarm.mlapp` | PySide6 桌面 GUI：复刻原版面板 + 内嵌 matplotlib 3D + 运行中实时控制 |
+| `gui/__init__.py`（改） | — | 包说明 + 启动命令（desktop_app） |
+| `tests/test_gui.py`（改） | — | PySide6 offscreen headless 测试 |
+| `gui/app.py`（删除） | — | Streamlit 版（舍弃） |
 
-### 关键设计决策（对照附录 A）
+### 面板复刻（对照原版截图）
 
-1. **导入约定(A.0)**：`_REPO_ROOT=c:\SwarmLab` 入 `sys.path`，`from SwarmLab_py.{simulation,visualization,math_tools} import ...`
-   —— 不再用裸顶层导入，上次的 `relative import beyond top-level` 错误从根上消除。
-2. **真实接口(A.2/A.3)**：`Simulation(...,fault_schedule=[FaultEvent(t,state)])` + `sim.run(on_step=...)`；
-   历史用 `get_pos_history()[1:]`/`get_vel_history()`；建筑取 `sim.params.map`(MapParams)；碰撞用
-   `swarm.collisions_history`/`sim.collisions_sum`；`compute_swarm_performance(pos,vel,p_swarm)`→6 元组；
-   `plot_trajectories`/`plot_performance` 复用并渲染为 PNG 字节缓存（不随滑杆重算）。
-3. **逐帧状态**：`on_step` 回调记录每架 `drone_state.value` → (T,N)，3D 回放按状态着色（●/■/▲ = ○/□/△）。
-4. **坐标 NED→ENU**：x=east(pe)、y=north(pn)、z=up(-pd)，与 SwarmViewer/offline_plots 一致；
-   建筑 Mesh3d 镜像 `map_drawing._building_boxes` 几何。
-5. **性能子采样**：指标与出图对帧做 ~200 点子采样，保证交互流畅。
+- 左列「类型选择」：无人机类型(质点型) / 算法(Vasarhelyi|Olfati-Saber) / 无人机状态(正常|动力锁死|失控漂移) /
+  失控比例滑杆(0-60) / 显示地图障碍 / 绘制调试视图。
+- 右列「集群参数设置」：数量(spin) / 间距滑杆[m](5-15) / 速度滑杆[m/s](2-8) / 仿真时长 /
+  **前进方向罗盘(180=N，自绘可拖拽旋钮)**。
+- 底部「开始仿真」**拨动开关**（自绘 pill，关闭/开启）。
+
+### 实时控制（用户要求；不预设故障/恢复时间）
+
+- 运行中**每步**读取：罗盘(u_ref)、间距(d_ref，含 Vasarhelyi `r0_rep`)、速度(v_ref)、失控比例、无人机状态
+  （`set_dronestate` 即时生效；切回 Normal 全体恢复）。
+- 仅 数量/算法/地图/时长 为开局设定（运行中禁用这些控件）。
+- 引擎 `SimController` 逐步复刻 runner 主循环（update_command→fad→update_state），参数来自实时控件。
+
+### 3D 视图（对照毕设演示视频抽帧对齐）
+
+- 内嵌 matplotlib QtAgg；复用 `map_drawing.draw_buildings/draw_cylinders/set_map_axes`。
+- 每机 jet 一色 + 状态 marker ○/□/△（与 SwarmViewer 一致）；**细彩线轨迹尾迹**（对齐视频观感）。
+- 标题 `Simulation time: X seconds`（对齐视频）；坐标 NED→ENU。
 
 ### 测试结果
 
-- `test_gui`（AppTest headless）**1/1**：初始渲染无异常；预设 nb_agents=5 / end_time=6 → 点击运行 →
-  n=601、概览 6 指标、无异常。
-- 全量回归 **76/76**（Stage-2 的 75 + GUI 1）。
-- 启动：`C:\Python\python.exe -m streamlit run SwarmLab_py/gui/app.py`（默认 http://localhost:8501）。
+- `test_gui`（PySide6 offscreen）**1/1**：建窗 + 30 步 + Stalled 注入(2/4) + 切回恢复 +
+  `_update_view`(尾迹)/`_update_debug` 渲染。
+- 全量回归 **76/76**。
+- 启动：`C:\Python\python.exe -m SwarmLab_py.gui.desktop_app`（依赖 `pip install PySide6`）。
 
 ### 已知点 / 待办
 
-- GUI 仅覆盖 point_mass 主线；真实动力学（Stage 4 / Phase 8）完成后需增 `drone_type` 选择与相应视图。
-- 3D 回放为逐帧滑杆（非自动播放）；如需播放可后续加 auto-refresh。
+- GUI 仅覆盖 point_mass 主线；真实动力学（Stage 4 / Phase 8）完成后需增 drone_type 选择与相应视图。
 - MATLAB/Python 数值对照（§17 / 缺口 B）仍待 Stage 4 统一回补。
 
 ---
