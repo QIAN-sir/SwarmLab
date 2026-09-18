@@ -695,16 +695,20 @@ class MainWindow(QMainWindow):
                 render_points_as_spheres=True, reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Stalled"]
         if idx:
+            # 动力锁死 = 立方体 glyph（世界单位，与 Drifting 同尺寸）
+            cube = pv.Cube(x_length=5.0, y_length=5.0, z_length=5.0)
+            g = pv.PolyData(enu[idx]).glyph(geom=cube, scale=False, orient=False)
             self._pv_drone_actors["Stalled"] = self.pview.add_mesh(
-                pv.PolyData(enu[idx]), color="#ff7f0e", point_size=16,
-                render_points_as_spheres=False, reset_camera=False)
+                g, color="#ff7f0e", reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Drifting"]
         if idx:
-            # 失控漂移 = 三角形（圆锥 glyph，3D 下的 ▲），区别于 Normal 球 / Stalled 方
-            cone = pv.Cone(radius=5.0, height=10.0, direction=(0, 0, 1), center=(0, 0, 0))
-            glyphs = pv.PolyData(enu[idx]).glyph(geom=cone, scale=False, orient=False)
+            # 失控漂移 = 简单平面三角形 glyph（与 Stalled 同尺寸，仅略大于 Normal）
+            r = 3.0
+            tri = pv.PolyData([(0, r, 0), (-0.866 * r, -0.5 * r, 0), (0.866 * r, -0.5 * r, 0)],
+                              faces=[3, 0, 1, 2])
+            g = pv.PolyData(enu[idx]).glyph(geom=tri, scale=False, orient=False)
             self._pv_drone_actors["Drifting"] = self.pview.add_mesh(
-                glyphs, color="#d62728", reset_camera=False)
+                g, color="#d62728", reset_camera=False)
         # 尾迹（每 5 帧重建一次，降开销）
         self._pv_tick += 1
         if self._pv_tick % 5 == 0:
