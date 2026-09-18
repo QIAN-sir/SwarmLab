@@ -551,7 +551,48 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
   障碍距离计算**内联**在 `compute_swarm_performance` 里。
 - **处置**：行首锚定正则把 7 文件 13 处导入改回 `from ..X`；删除 `gui/`、`tests/test_gui.py`；
   重跑 9 个测试文件 = **75/75**。无任何源文件丢失。
-- **现状**：代码库 = Stage-2 干净基线；Stage-3 GUI 待按**正确约定**（见附录 A.0）重做，尚未开始。
+- **现状**：代码库 = Stage-2 干净基线；Stage-3 GUI 已按**正确约定**（附录 A.0）重做完成，见下一节。
+
+---
+
+## Stage 3 —— GUI（Streamlit + Plotly）重做完成
+
+**日期**：2026-09-18　**状态**：✅ 完成（`test_gui` AppTest 1/1；全量 **76/76**）
+**框架**：Web（Streamlit 1.64 + Plotly 7.1，经用户确认）。严格对照附录 A 的接口与导入约定。
+
+### 新增文件（3）
+
+| Python 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `gui/__init__.py` | — | 包说明 + 启动命令 |
+| `gui/app.py` | `examples/GUI_swarm.mlapp` + 主循环 | Streamlit 前端：侧边栏参数/故障时间表 → 运行 → 3D 回放(Plotly) + 轨迹/性能/碰撞(复用 matplotlib 出图) |
+| `tests/test_gui.py` | — | Streamlit `AppTest` headless（初始渲染 + 点击运行 + 概览指标） |
+
+### 关键设计决策（对照附录 A）
+
+1. **导入约定(A.0)**：`_REPO_ROOT=c:\SwarmLab` 入 `sys.path`，`from SwarmLab_py.{simulation,visualization,math_tools} import ...`
+   —— 不再用裸顶层导入，上次的 `relative import beyond top-level` 错误从根上消除。
+2. **真实接口(A.2/A.3)**：`Simulation(...,fault_schedule=[FaultEvent(t,state)])` + `sim.run(on_step=...)`；
+   历史用 `get_pos_history()[1:]`/`get_vel_history()`；建筑取 `sim.params.map`(MapParams)；碰撞用
+   `swarm.collisions_history`/`sim.collisions_sum`；`compute_swarm_performance(pos,vel,p_swarm)`→6 元组；
+   `plot_trajectories`/`plot_performance` 复用并渲染为 PNG 字节缓存（不随滑杆重算）。
+3. **逐帧状态**：`on_step` 回调记录每架 `drone_state.value` → (T,N)，3D 回放按状态着色（●/■/▲ = ○/□/△）。
+4. **坐标 NED→ENU**：x=east(pe)、y=north(pn)、z=up(-pd)，与 SwarmViewer/offline_plots 一致；
+   建筑 Mesh3d 镜像 `map_drawing._building_boxes` 几何。
+5. **性能子采样**：指标与出图对帧做 ~200 点子采样，保证交互流畅。
+
+### 测试结果
+
+- `test_gui`（AppTest headless）**1/1**：初始渲染无异常；预设 nb_agents=5 / end_time=6 → 点击运行 →
+  n=601、概览 6 指标、无异常。
+- 全量回归 **76/76**（Stage-2 的 75 + GUI 1）。
+- 启动：`C:\Python\python.exe -m streamlit run SwarmLab_py/gui/app.py`（默认 http://localhost:8501）。
+
+### 已知点 / 待办
+
+- GUI 仅覆盖 point_mass 主线；真实动力学（Stage 4 / Phase 8）完成后需增 `drone_type` 选择与相应视图。
+- 3D 回放为逐帧滑杆（非自动播放）；如需播放可后续加 auto-refresh。
+- MATLAB/Python 数值对照（§17 / 缺口 B）仍待 Stage 4 统一回补。
 
 ---
 
