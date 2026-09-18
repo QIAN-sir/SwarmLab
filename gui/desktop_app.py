@@ -67,6 +67,29 @@ _STATE_COLOR = {"Normal": "#1f77b4", "Stalled": "#ff7f0e", "Drifting": "#d62728"
 # ======================================================================
 # 实时仿真控制器（逐步复刻 runner 主循环，参数来自实时控件）
 # ======================================================================
+# ======================================================================
+# 无人机图标尺寸（世界单位，三种类型统一大小）
+# ★ 后期手动调整：只需改 DRONE_MARKER_SIZE 这一个数。
+#   球体半径 = S；正方体边长 = 2*S；四棱锥底边 = 2*S、高 = 2*S。
+#   地图宽约 300 m，取值越大越夸张，建议 0.5 ~ 3。
+DRONE_MARKER_SIZE = 1.5
+# ======================================================================
+
+
+def _marker_geoms(s):
+    """三种状态的世界单位 glyph 几何（统一尺寸 s）：球体 / 正方体 / 四棱锥。"""
+    sphere = pv.Sphere(radius=s)
+    cube = pv.Cube(x_length=2 * s, y_length=2 * s, z_length=2 * s)
+    pts = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s), (0, 0, s)]
+    faces = [4, 0, 1, 2, 3,
+             3, 0, 1, 4,
+             3, 1, 2, 4,
+             3, 2, 3, 4,
+             3, 3, 0, 4]
+    pyr = pv.PolyData(pts, faces=faces)
+    return sphere, cube, pyr
+
+
 class SimController:
     """point_mass 故障群实时仿真。开局参数建群；运行中参数每步读取。"""
 
@@ -687,27 +710,24 @@ class MainWindow(QMainWindow):
         for a in list(self._pv_drone_actors.values()):
             self.pview.remove_actor(a, reset_camera=False)
         self._pv_drone_actors = {}
+        sphere_g, cube_g, pyr_g = _marker_geoms(DRONE_MARKER_SIZE)
         idx = [i for i, s in enumerate(states) if s == "Normal"]
         if idx:
             rgb = (colors[:, idx].T * 255).astype(np.uint8)
             pd = pv.PolyData(enu[idx]); pd.point_data["rgb"] = rgb
-            g = pd.glyph(geom=pv.Circle(radius=1.6), scale=False, orient=False)
+            g = pd.glyph(geom=sphere_g, scale=False, orient=False)
             self._pv_drone_actors["Normal"] = self.pview.add_mesh(
                 g, scalars="rgb", rgb=True, reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Stalled"]
         if idx:
-            # 动力锁死 = 平面正方形 glyph（2D □，非正方体）
-            sq = pv.Plane(i_size=3.6, j_size=3.6)
-            g = pv.PolyData(enu[idx]).glyph(geom=sq, scale=False, orient=False)
+            # 动力锁死 = 正方体
+            g = pv.PolyData(enu[idx]).glyph(geom=cube_g, scale=False, orient=False)
             self._pv_drone_actors["Stalled"] = self.pview.add_mesh(
                 g, color="#ff7f0e", reset_camera=False)
         idx = [i for i, s in enumerate(states) if s == "Drifting"]
         if idx:
-            # 失控漂移 = 简单平面三角形 glyph（缩小，仅略大于正常）
-            r = 2.0
-            tri = pv.PolyData([(0, r, 0), (-0.866 * r, -0.5 * r, 0), (0.866 * r, -0.5 * r, 0)],
-                              faces=[3, 0, 1, 2])
-            g = pv.PolyData(enu[idx]).glyph(geom=tri, scale=False, orient=False)
+            # 失控漂移 = 四棱锥
+            g = pv.PolyData(enu[idx]).glyph(geom=pyr_g, scale=False, orient=False)
             self._pv_drone_actors["Drifting"] = self.pview.add_mesh(
                 g, color="#d62728", reset_camera=False)
         # 尾迹（每 5 帧重建一次，降开销）
