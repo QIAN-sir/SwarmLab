@@ -29,6 +29,11 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 import numpy as np                                                     # noqa: E402
+import matplotlib                                                      # noqa: E402
+
+# 中文字体：修复 3D 标题/标签汉字显示为方框（默认 DejaVu 无 CJK 字形）
+matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DengXian", "DejaVu Sans"]
+matplotlib.rcParams["axes.unicode_minus"] = False
 
 from PySide6.QtCore import Qt, QTimer, Signal                          # noqa: E402
 from PySide6.QtGui import QPainter, QPen, QColor, QFont                # noqa: E402
@@ -296,6 +301,7 @@ class MainWindow(QMainWindow):
         vv.addWidget(self._build_view_controls())
         self.fig = Figure(figsize=(7, 6))
         self.canvas = FigureCanvasQTAgg(self.fig)
+        self.canvas.mpl_connect("scroll_event", self._on_scroll)   # 滚轮缩放（OrbitControls）
         vv.addWidget(self.canvas, stretch=3)
         self.debug_fig = Figure(figsize=(7, 2))
         self.debug_canvas = FigureCanvasQTAgg(self.debug_fig)
@@ -347,8 +353,12 @@ class MainWindow(QMainWindow):
         v.addWidget(g)
 
         v.addWidget(self._center_label("无人机失控比例设置", bold=True))
+        _lr = QHBoxLayout(); _lr.setSpacing(6)
+        _lr.addWidget(QLabel("0"))
         self.loss_slider = self._slider(0, 60, 20)
-        v.addWidget(self.loss_slider)
+        _lr.addWidget(self.loss_slider, stretch=1)
+        _lr.addWidget(QLabel("60"))
+        v.addLayout(_lr)
         self.loss_label = self._center_label("20 %")
         self.loss_slider.valueChanged.connect(lambda v_: self.loss_label.setText(f"{v_} %"))
         v.addWidget(self.loss_label)
@@ -376,15 +386,23 @@ class MainWindow(QMainWindow):
         v.addLayout(row)
 
         v.addWidget(self._center_label("无人机间距设置 [m]", bold=True))
+        _dr = QHBoxLayout(); _dr.setSpacing(6)
+        _dr.addWidget(QLabel("5"))
         self.dref_slider = self._slider(5, 15, 10)
-        v.addWidget(self.dref_slider)
+        _dr.addWidget(self.dref_slider, stretch=1)
+        _dr.addWidget(QLabel("15"))
+        v.addLayout(_dr)
         self.dref_label = self._center_label("10 m")
         self.dref_slider.valueChanged.connect(lambda v_: self.dref_label.setText(f"{v_} m"))
         v.addWidget(self.dref_label)
 
         v.addWidget(self._center_label("无人机速度设置 [m/s]", bold=True))
+        _vr = QHBoxLayout(); _vr.setSpacing(6)
+        _vr.addWidget(QLabel("2"))
         self.vref_slider = self._slider(2, 8, 5)
-        v.addWidget(self.vref_slider)
+        _vr.addWidget(self.vref_slider, stretch=1)
+        _vr.addWidget(QLabel("8"))
+        v.addLayout(_vr)
         self.vref_label = self._center_label("5 m/s")
         self.vref_slider.valueChanged.connect(lambda v_: self.vref_label.setText(f"{v_} m/s"))
         v.addWidget(self.vref_label)
@@ -458,7 +476,9 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------
     def _build_view_controls(self):
-        """视角控制：预设按钮 + 仰角/方位滑杆（禁用自由拖拽后，用它稳定地换左/右/上/下视角）。"""
+        """视角控制（主流 OrbitControls 方案，同 RViz/Gazebo/three.js/MATLAB rotate3d）：
+        左键拖拽=旋转、滚轮=缩放、右键=平移（由 matplotlib 3D 导航提供）；
+        另给预设视角与重置按钮，便于快速回到好角度、避免“找不到视角”。"""
         w = QWidget(); h = QHBoxLayout(w)
         h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
         h.addWidget(QLabel("视角:"))
@@ -468,43 +488,61 @@ class MainWindow(QMainWindow):
             b.setFixedWidth(52)
             b.clicked.connect(lambda _=False, e=elev, a=azim: self._set_view(e, a))
             h.addWidget(b)
-        h.addSpacing(14)
-        h.addWidget(QLabel("仰角"))
-        self.elev_slider = QSlider(Qt.Horizontal)
-        self.elev_slider.setRange(-90, 90); self.elev_slider.setValue(30)
-        self.elev_slider.valueChanged.connect(self._apply_view)
-        h.addWidget(self.elev_slider)
-        h.addWidget(QLabel("方位"))
-        self.azim_slider = QSlider(Qt.Horizontal)
-        self.azim_slider.setRange(-180, 180); self.azim_slider.setValue(-60)
-        self.azim_slider.valueChanged.connect(self._apply_view)
-        h.addWidget(self.azim_slider)
+        rst = QPushButton("重置")
+        rst.setFixedWidth(52)
+        rst.clicked.connect(lambda _=False: self._set_view(30, -60))
+        h.addWidget(rst)
+        h.addSpacing(12)
+        h.addWidget(QLabel("左键拖拽=旋转  滚轮=缩放  右键=平移"))
+        h.addStretch()
         return w
 
     def _set_view(self, elev, azim):
-        self.elev_slider.blockSignals(True); self.azim_slider.blockSignals(True)
-        self.elev_slider.setValue(int(elev)); self.azim_slider.setValue(int(azim))
-        self.elev_slider.blockSignals(False); self.azim_slider.blockSignals(False)
-        self._apply_view()
-
-    def _apply_view(self, _=None):
         if self.ax is None:
             return
-        self.ax.view_init(self.elev_slider.value(), self.azim_slider.value())
+        self._apply_limits()          # 预设/重置同时恢复默认取景
+        self.ax.view_init(elev, azim)
+        self.canvas.draw_idle()
+
+    def _apply_limits(self):
+        mp = self.controller.params.map
+        if getattr(mp, "ACTIVE_ENVIRONMENT", False):
+            set_map_axes(self.ax, mp)
+        else:
+            pos = self.controller.swarm.get_pos_ned()
+            mn = pos.min(axis=1); mx = pos.max(axis=1)
+            edge = max(float((mx - mn).max()), 40.0)
+            ctr = (mn + mx) / 2.0
+            self.ax.set_xlim(ctr[1] - edge, ctr[1] + edge)
+            self.ax.set_ylim(ctr[0] - edge, ctr[0] + edge)
+            self.ax.set_zlim(0, max(edge, 40.0))
+
+    def _on_scroll(self, event):
+        """滚轮缩放：以当前视野中心缩放三轴范围（放大看局部碰撞/避障，缩小看整体）。"""
+        if self.ax is None or event.inaxes is not self.ax:
+            return
+        scale = 0.85 if event.button == "up" else 1.0 / 0.85
+        for getter, setter in ((self.ax.get_xlim, self.ax.set_xlim),
+                               (self.ax.get_ylim, self.ax.set_ylim),
+                               (self.ax.get_zlim, self.ax.set_zlim)):
+            lo, hi = getter()
+            c = (lo + hi) / 2.0
+            half = (hi - lo) / 2.0 * scale
+            setter(c - half, c + half)
         self.canvas.draw_idle()
 
     def _init_view(self):
         self.fig.clear()
         self.ax = self.fig.add_subplot(111, projection="3d")
-        self.ax.set_navigate(False)   # 禁用自由拖拽旋转/平移，避免“整个空间乱转”；改用视角控件
-        self.ax.view_init(self.elev_slider.value(), self.azim_slider.value())
+        # 保持 matplotlib 3D 导航开启（OrbitControls：拖拽旋转/滚轮缩放/右键平移）
         mp = self.controller.params.map
         if getattr(mp, "ACTIVE_ENVIRONMENT", False):
             if mp.building_shape == "rectangle":
                 draw_buildings(self.ax, mp)
             elif mp.building_shape == "cylinder":
                 draw_cylinders(self.ax, mp)
-            set_map_axes(self.ax, mp)
+        self._apply_limits()
+        self.ax.view_init(30, -60)
         self.ax.set_xlabel("Y position [m]"); self.ax.set_ylabel("X position [m]")
         self.ax.set_zlabel("Z position [m]")
         self._scatters = []
