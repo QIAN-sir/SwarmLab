@@ -74,7 +74,7 @@ _STATE_COLOR = {"Normal": "#1f77b4", "Stalled": "#ff7f0e", "Drifting": "#d62728"
 #   图标在屏幕上保持同一大小（默认视距下约 3*S 像素）。
 #   球体半径 = S；正方体边长 = 2*S；三棱锥底 = 2*S、高 = 2*S。
 #   偏小以免遮挡轨迹：建议 1 ~ 3（2 ≈ 默认 6px）。
-DRONE_MARKER_SIZE = 0.5
+DRONE_MARKER_SIZE = 1
 # ======================================================================
 
 
@@ -83,7 +83,7 @@ def _marker_geoms(s):
     三棱锥俯视图为三角形，与正方体的方形俯视图明确区分。"""
     sphere = pv.Sphere(radius=s)
     cube = pv.Cube(x_length=2 * s, y_length=2 * s, z_length=2 * s)
-    r = s
+    r = 1.155 * s   # 2*s/sqrt(3)：使三棱锥包围盒≈2s，与球直径/立方边长视觉尺寸一致
     pts = [(0, r, -s), (-0.866 * r, -0.5 * r, -s), (0.866 * r, -0.5 * r, -s), (0, 0, s)]
     faces = [3, 0, 1, 2,
              3, 0, 1, 3,
