@@ -838,6 +838,46 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 9 —— 路径可视化 + 视频录制（供汇报/回顾）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（path_video 18/18；全量 **214/214**）
+**范围**：用户明确需要路径可视化 + 视频录制（汇报/回顾）；SwarmViewerOffline 回放**不需要**（跳过）。
+
+### 新增文件
+
+| 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `visualization/path_drawing.py` | draw_waypoints.m / draw_path.m + points_along_dubins_path | 航点连线（fillet 直连 / dubins 密集点）+ 当前 path 段（直线/orbit）；含 B-24 修复 |
+| `visualization/video_writer.py` | VideoWriterWithRate.m | figure 按 output_rate 节流录 mp4（matplotlib FFMpegWriter，自动探测 ffmpeg） |
+| `examples/run_drone_video.py` | example_path_manager 可视化+录制 | demo：wing 沿 Dubins 路径飞 + 全局路径视图 + 录 mp4 |
+| `tests/test_path_video.py` | — | 18 项（waypoints/path/dubins 点/B-24/路径层/mp4） |
+
+### 修改文件
+
+| 文件 | 改动 |
+|---|---|
+| `visualization/drone_viewer.py` | 叠加路径层：每帧 draw_waypoints + draw_path（`wpt_handle`/`path_handle`，`draw_path_layer` 开关） |
+| `visualization/__init__.py` | 导出 draw_waypoints/draw_path/points_along_dubins_path/VideoWriterWithRate |
+
+### 修复的 bug
+
+- **B-24（修复）**：`draw_path.m` 的 `c/rho/lambda` 索引按 wing(30) 布局（c@8:11,rho@11），对 quad(33) 布局（c@11:14,rho@14）会错位读到 r_next。意图=画当前 path 段 orbit 圆心/半径。修复：按 `len(path)` 区分布局取正确索引。验证：quad33 设干扰 r_next=999 时圆心仍取真 c@11:14。
+
+### 视频后端
+
+- 无 imageio；用 matplotlib `FFMpegWriter`（mp4/h264）+ 自动探测 ffmpeg（`C:\APP\ffmpeg\ffmpeg_full\bin\ffmpeg.exe` 或 PATH）。
+
+### 测试 + demo
+
+- `test_path_video` **18/18**；全量 **214/214**。
+- demo `run_drone_video.py`：wing 沿 Dubins 10s 飞至 (350,-10)/h=70/Va=35；出 `drone_path_flight.mp4`（99 帧）+ `.png`（建筑+蓝航点线+红 path 段）。
+
+### 里程碑
+
+- ✅ 汇报/回顾素材齐备：群体仿真图/视频（Stage 2/3）、单机真实动力学机体 3D + 状态曲线（Stage 8）、路径飞行视频（Stage 9）。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -862,7 +902,7 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `math_tools/` | ✅ | Rb2i/pos2dist/compute_neighborhood/network_components/compute_swarm_performance |
 | `control/true_states.py` | ✅ | 伪真值估计（z_hat 22） |
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
-| `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8） |
+| `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`（Stage 9） |
 | `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3） |
 | `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
 | `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |

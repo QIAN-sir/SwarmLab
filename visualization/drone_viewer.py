@@ -16,6 +16,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from .drone_body import define_body, rotate, translate
 from .map_drawing import draw_buildings, draw_cylinders, set_map_axes
+from .path_drawing import draw_waypoints, draw_path
 
 # NED→ENU 旋转（DroneViewer.m 的 R=[0,1,0; 1,0,0; 0,0,-1]）
 _R_NED2ENU = np.array([[0.0, 1.0, 0.0],
@@ -38,6 +39,9 @@ class DroneViewer:
         self.ax = None
         self.body_coll = None
         self.point_handle = None
+        self.wpt_handle = None          # 航点连线句柄（draw_waypoints）
+        self.path_handle = None         # 当前 path 段句柄（draw_path）
+        self.draw_path_layer = True     # 是否叠加航点/路径层
         # 机体几何（对应 DroneViewer 构造里的 define_body）
         self.vertices, self.faces, self.face_colors = define_body(drone.drone_type)
 
@@ -54,6 +58,8 @@ class DroneViewer:
             self._draw_body(drone)
         else:                                  # point_mass：散点
             self._draw_point(drone)
+        if map_params is not None and self.draw_path_layer:
+            self._draw_path_layer(drone, map_params)
         self.ax.set_title(f"Simulation time: {time:.2f} seconds")
         self.fig.canvas.draw_idle()
 
@@ -96,6 +102,15 @@ class DroneViewer:
             self.point_handle._offsets3d = ([pe], [pn], [-pd])
         if self.center_view_on_drone:
             self._center(pe, pn, -pd)
+
+    def _draw_path_layer(self, drone, map_params):
+        """叠加航点连线 + 当前 path 段（对应 DroneViewer.update 的 draw_waypoints/draw_path）。"""
+        if drone.waypoints is None or not drone.nb_waypoints:
+            return
+        wpt = np.asarray(drone.waypoints, dtype=float).reshape(-1, 5)[: int(drone.nb_waypoints)]
+        radius = float(drone.path[11]) if drone.path.size >= 30 else 0.0
+        self.wpt_handle = draw_waypoints(self.ax, wpt, radius, self.wpt_handle)
+        self.path_handle = draw_path(self.ax, drone.path, map_params.width, self.path_handle)
 
     def _center(self, x, y, z, margin=10.0):
         self.ax.set_xlim(x - margin, x + margin)
