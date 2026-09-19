@@ -43,21 +43,22 @@ def test_gui_window_and_live_sim():
     ctrl = win.controller
     rd = win._result_dir          # 自动记录的结果目录（测试后清理）
 
-    # 集体垂直控制：vz_up>0 → 健康机集体上升（NED z 减小）；vz_up<0 → 下降
-    ctrl.vz_up = 2.0
-    z0 = float(ctrl.swarm.get_pos_ned()[2].mean())
-    for _ in range(20):
+    # 高度保持（方案1）：h_target 设定后集群中心高度收敛到目标；h_target=0 → 贴地(无人车)
+    ctrl.end_time = 100.0          # 高度收敛需较长时间，放宽 end（默认 end_spin=2 会提前 done）
+    h0 = -float(ctrl.swarm.get_pos_ned()[2].mean())
+    ctrl.h_target = h0 + 20.0
+    for _ in range(1000):
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
-    z1 = float(ctrl.swarm.get_pos_ned()[2].mean())
-    assert z1 < z0 - 0.1, "vz_up>0 未使集群上升"
-    ctrl.vz_up = -2.0
-    for _ in range(20):
+    h1 = -float(ctrl.swarm.get_pos_ned()[2].mean())
+    assert abs(h1 - (h0 + 20.0)) < 3.0, f"高度保持未收敛 (h={h1:.1f}, target={h0 + 20:.1f})"
+    ctrl.h_target = 0.0
+    for _ in range(3000):
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
-    z2 = float(ctrl.swarm.get_pos_ned()[2].mean())
-    assert z2 > z1 + 0.1, "vz_up<0 未使集群下降"
-    ctrl.vz_up = 0.0
+    h2 = -float(ctrl.swarm.get_pos_ned()[2].mean())
+    assert h2 < 3.0, f"h_target=0 未贴地/无人车 (h={h2:.1f})"
+    ctrl.h_target = h0
 
     # 实时故障注入：Stalled, loss=0.3, nb=4 → ceil(1.2)=2 架
     ctrl.apply_live(180, 10, 5)

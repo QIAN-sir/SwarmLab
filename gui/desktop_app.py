@@ -120,7 +120,7 @@ class SimController:
         self.end_time = float(end_time)
         self.current_state = "Normal"
         self.swarm.t_fault = 0.0
-        self.vz_up = 0.0               # 集体垂直速度 [m/s]（正=上升），GUI 滑杆实时设置
+        self.h_target = 50.0           # 集群中心目标高度 [m]（0=地面/无人车），GUI 竖直滑杆实时设置
         self.done = False
         self.pos_history = []          # 每帧 (3,N)
         self.vel_history = []          # 每帧 (3,N)（结果性能图用）
@@ -160,15 +160,15 @@ class SimController:
         if self.done:
             return False
         self.swarm.update_command(self.params.p_swarm, self.params.p_swarm.r_coll, self.dt)
-        # 集体垂直控制：覆盖（非叠加）健康机速度指令 z（NED 向下正；vz_up>0=上升→z 速度负）。
-        # 背景：群体算法迁移项 u_ref 仅在水平面，避让故障机下压后无垂直恢复力，
-        # 健康机会停在低空；本组件供手动集体升/降以恢复高度。
-        # 用覆盖而非叠加：叠加会与算法加速度限幅交互产生逐歩累积过冲（vel 冲超 max_v）；
-        # 覆盖使 vel_z 精确等于目标；vz_up=0 时不干预，算法（含避让 z 排斥）全权。
-        if self.vz_up != 0.0:
-            for d in self.swarm.drones:
-                if getattr(d.drone_state, "value", d.drone_state) == "Normal":
-                    d.command[3] = -self.vz_up
+        # 高度保持（方案1：高度锁H + 纯水平避让）：健康机 z 速度 = 向 h_target 收敛，
+        # 覆盖算法 z 分量（避让/凝聚的 z 力丢弃 → 避让纯水平，天然不撞地/撞楼）。
+        # h_target=0 → 贴地行驶（无人车模式）；z 完全由本高度保持控制。
+        for d in self.swarm.drones:
+            if getattr(d.drone_state, "value", d.drone_state) == "Normal":
+                h_i = -d.pos_ned[2]
+                vz = 0.5 * (self.h_target - h_i)      # 比例控制向目标高度
+                vz = max(-3.0, min(3.0, vz))          # 限垂直速度防过冲
+                d.command[3] = -vz                    # NED z 向下正；上升(vz>0)→z速度负
         fad = self._fad()
         self.swarm.fad = fad
         self.swarm.update_state(self.wind, self.time, fad)
@@ -493,17 +493,23 @@ class MainWindow(QMainWindow):
         self.vref_slider.valueChanged.connect(lambda v_: self.vref_label.setText(f"{v_} m/s"))
         v.addWidget(self.vref_label)
 
-        # 集体垂直控制（运行中实时）：避让故障机下压后可手动集体升/降恢复高度
-        v.addWidget(self._center_label("集体垂直速度 [m/s]（正=上升 / 负=下降）", bold=True))
-        _vz = QHBoxLayout(); _vz.setSpacing(6)
-        _vz.addWidget(QLabel("-5"))
-        self.vz_slider = self._slider(-5, 5, 0)
-        _vz.addWidget(self.vz_slider, stretch=1)
-        _vz.addWidget(QLabel("+5"))
-        v.addLayout(_vz)
-        self.vz_label = self._center_label("0 m/s（保持）")
-        self.vz_slider.valueChanged.connect(self._on_vz_changed)
-        v.addWidget(self.vz_label)
+        # 集群中心高度设置（运行中实时）：竖直滑杆 0~(障碍最高+50)m；0=地面=无人车模式
+        v.addWidget(self._center_label("集群中心高度 [m]（0=地面/无人车）", bold=True))
+        _hh = QHBoxLayout(); _hh.setSpacing(6)
+        _hh.addStretch()
+        self.h_slider = QSlider(Qt.Vertical)
+        self.h_slider.setRange(0, 150)          # 开局按 map.max_height+50 重置
+        self.h_slider.setValue(50)
+        self.h_slider.setFixedHeight(180)
+        _hh.addWidget(self.h_slider)
+        _hl = QVBoxLayout()
+        self.h_label = self._center_label("50 m（飞行）")
+        _hl.addWidget(self.h_label)
+        _hl.addStretch()
+        _hh.addLayout(_hl)
+        _hh.addStretch()
+        v.addLayout(_hh)
+        self.h_slider.valueChanged.connect(self._on_h_changed)
 
         v.addWidget(self._center_label("仿真参数设置", bold=True))
         row = QHBoxLayout(); row.addStretch()
@@ -532,6 +538,12 @@ class MainWindow(QMainWindow):
                 active_environment=bool(self.map_checkbox.isChecked()),
                 end_time=float(self.end_spin.value()))
             self._init_view()
+            # 高度滑杆范围=障碍最高+50；同步到初始集群中心高度（避免开局跳变）
+            max_h = int(getattr(self.controller.params.map, "max_height", 100)) + 50
+            self.h_slider.setMaximum(max_h)
+            init_h = int(round(-float(np.mean(self.controller.params.p_swarm.Pos0[2, :]))))
+            self.h_slider.setValue(max(0, min(max_h, init_h)))
+            self.controller.h_target = float(self.h_slider.value())
             # 每次仿真自动建结果目录 + 启动交互画面录制（同 MATLAB results 惯例）
             self._result_dir = new_result_dir(
                 algorithm, tag=f"nb{self.nb_spin.value()}")
@@ -554,9 +566,9 @@ class MainWindow(QMainWindow):
             return "Drifting"
         return "Normal"
 
-    def _on_vz_changed(self, v_):
-        txt = "保持" if v_ == 0 else ("上升" if v_ > 0 else "下降")
-        self.vz_label.setText(f"{v_} m/s（{txt}）")
+    def _on_h_changed(self, v_):
+        mode = "无人车(地面)" if v_ == 0 else "飞行"
+        self.h_label.setText(f"{v_} m（{mode}）")
 
     # ------------------------------------------------------------------
     def _tick(self):
@@ -572,7 +584,7 @@ class MainWindow(QMainWindow):
             return
         # 实时参数 → 每步生效
         c.apply_live(self.compass.value(), self.dref_slider.value(), self.vref_slider.value())
-        c.vz_up = float(self.vz_slider.value())      # 集体垂直速度（运行中实时）
+        c.h_target = float(self.h_slider.value())   # 集群中心目标高度（运行中实时）
         c.set_state(self._current_state(), self.loss_slider.value() / 100.0)
         steps = max(1, int(round(0.04 / c.dt)))     # ≈ 实时
         for _ in range(steps):

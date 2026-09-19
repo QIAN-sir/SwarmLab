@@ -936,29 +936,32 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
-## Stage 12 —— GUI 集体垂直控制组件（集群集体升/降）【完成】
+## Stage 12 —— GUI 集群中心高度滑杆 + 方案1防撞（高度锁H+纯水平避让）【完成】
 
-**日期**：2026-09-19　**状态**：✅ 完成（test_gui 含垂直断言 1/1；全量 **232/232**）
-**需求**：避让上方故障机后健康机下压到低空，因群体算法迁移项 `u_ref` 仅在水平面、
-垂直方向无恢复力而**停在低空不恢复**；加组件手动控制集群集体向上/向下飞以恢复高度。
+**日期**：2026-09-19　**状态**：✅ 完成（test_gui 含高度保持/无人车断言 1/1；全量 **232/232**）
+**需求**：(1) 竖直滑杆设定集群中心目标高度 H（刻度 0~障碍最高+50m），高度保持自动收敛、
+无需频繁操作；H=0 → 贴地行驶 = **无人车模式**。(2) 低空/近楼高时避让故障机可能撞地/撞楼
+（算法垂直方向无地面/建筑约束）→ 用户拍板**方案1**：高度锁H + 避让纯水平化。
 
 ### 修改
 
 | 文件 | 改动 |
 |---|---|
-| `gui/desktop_app.py` | 右列加「集体垂直速度 [m/s]（正=上升/负=下降）」滑杆(-5..+5, 默认0)+label；`SimController.vz_up`；`step` 里 `vz_up≠0` 时**覆盖**健康机 `command[3] = -vz_up`（NED 向下正）；`_tick` 实时读滑杆 |
-| `tests/test_gui.py` | 加垂直控制断言：vz_up=2→集群上升(z减小)；vz_up=-2→下降 |
+| `gui/desktop_app.py` | 竖直滑杆「集群中心高度[m]（0=地面/无人车）」0~(max_height+50)，开局同步初始中心高；`SimController.h_target`；`step` 里健康机 `command[3] = -clamp(0.5*(h_target-h_i), ±3)`（高度保持，**覆盖算法 z 分量→避让纯水平**）；`_tick` 实时读滑杆 |
+| `tests/test_gui.py` | 高度保持断言：h_target=h0+20→收敛(±3m)；h_target=0→贴地<3m(无人车) |
 
-### 关键设计：覆盖而非叠加
+### 方案1 防撞机制
 
-- 叠加式（`command[3] -= vz`）会与算法**加速度限幅**交互：限幅使 `vel_command` 追踪实际 `vel`，
-  每步再叠加 `vz` → `vel` 逐歩跳变累积（实测冲到 -38 m/s，远超 max_v=7），下降时 vel 仍负故失效。
-- 覆盖式（`command[3] = -vz_up`）使 `vel_z` 精确等于目标，无累积；`vz_up=0` 时不干预，
-  算法（含避让 z 排斥）全权。故障机（Stalled/Drifting）不受控（不用 command）。
+- 健康机 z 完全由高度保持控制（向 h_target 收敛），**算法（避让/凝聚）的 z 分量被覆盖丢弃**
+  → 避让只在水平面进行 → 集群高度恒定=H → 只要 H 安全（>0 且水平靠圆柱2D避障绕开建筑）
+  就天然不撞地/不撞楼。H=0 → 贴地纯2D（无人车）。
+- 高度保持用比例控制 kp=0.5 + 垂直速度限幅 ±3 m/s 防过冲。
+- 迭代记录：先误做“垂直速度滑杆”（需频繁操作），按用户纠正改为“目标高度滑杆+高度保持”；
+  叠加式垂直指令会与加速度限幅交互累积过冲，故用覆盖式。
 
 ### 验证
 
-- `test_gui` 1/1（含 vz_up 正=上升/负=下降断言）；全量 **232/232**。
+- `test_gui` 1/1（高度收敛 + 无人车贴地 + 故障注入）；全量 **232/232**。
 
 ---
 
@@ -988,7 +991,7 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
 | `simulation/result_dir.py` | ✅ | `new_result_dir`/`RESULT_ROOT`（result/<alg>_<ts>/，Stage 10） |
 | `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`(含 FrameVideoWriter)（Stage 9/11） |
-| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3）+ 每次仿真自动记录 result/ + 交互视角视频（Stage 11）+ 集体垂直控制滑杆（Stage 12） |
+| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3）+ 每次仿真自动记录 result/ + 交互视角视频（Stage 11）+ 集群中心高度滑杆+方案1防撞（Stage 12） |
 | `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
 | `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |
 | `guidance/` | ✅ | plan_RRT + path_manager_quad/wing + path_follower_quad/wing + dubins（Stage 5/7） |
