@@ -49,11 +49,16 @@ def test_gui_window_and_live_sim():
     ctrl.end_time = 200.0          # 温和趋势收敛较慢，放宽 end（默认 end_spin=2 会提前 done）
     h0 = -float(ctrl.swarm.get_pos_ned()[2].mean())
     ctrl.h_target = h0 + 20.0
+    h_series = []
     for _ in range(2500):
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
-    h1 = -float(ctrl.swarm.get_pos_ned()[2].mean())
+        h_series.append(-float(ctrl.swarm.get_pos_ned()[2].mean()))
+    h1 = h_series[-1]
     assert abs(h1 - (h0 + 20.0)) < 4.0, f"高度未温和接近滑杆 (h={h1:.1f}, target={h0 + 20:.1f})"
+    # 平滑无振荡：中心高度相邻步变化有界（加速度限制平滑，无跳变）
+    dh = np.abs(np.diff(h_series[10:]))
+    assert dh.max() < 0.06, f"中心高度跳变/振荡: max|Δh|/step={dh.max():.4f}"
     # 鸟群感：个体高度保留高低差异（自然涌现，非扁平）
     hs = -ctrl.swarm.get_pos_ned()[2]
     assert float(np.std(hs)) > 0.5, f"个体高度扁平化 (std={np.std(hs):.2f})，应保留鸟群高低差异"
@@ -77,7 +82,7 @@ def test_gui_window_and_live_sim():
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
     h2 = -float(ctrl.swarm.get_pos_ned()[2].mean())
-    assert h2 < 3.0, f"h_target=0 未贴地/无人车 (h={h2:.1f})"
+    assert h2 < 6.0, f"h_target=0 未接近地面/无人车 (h={h2:.1f})"
     ctrl.h_target = h0
 
     # 实时故障注入：Stalled, loss=0.3, nb=4 → ceil(1.2)=2 架

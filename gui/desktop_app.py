@@ -121,6 +121,9 @@ class SimController:
         self.current_state = "Normal"
         self.swarm.t_fault = 0.0
         self.h_target = 50.0           # 集群中心目标高度 [m]（0=地面/无人车），GUI 竖直滑杆实时设置
+        self._c_smooth = 0.0           # 平滑后的整体趋势升降速度（加速度限制渐变）
+        self._vz_smooth = {}           # 每架健康机平滑后的垂直速度（消除跳变→无振荡）
+        self._alg_velz = {}            # 算法参考 vel_z（防加速度限幅吸收偏移而累积→防过冲振荡）
         self.done = False
         self.pos_history = []          # 每帧 (3,N)
         self.vel_history = []          # 每帧 (3,N)（结果性能图用）
@@ -159,16 +162,24 @@ class SimController:
     def step(self):
         if self.done:
             return False
+        # 分离算法参考 vel_z 与实际 vel_z：算法的加速度限幅会追踪 vel_z，若用被修改的实际 vel_z，
+        # 我的垂直偏移会被吸收进算法基线逐歩累积→过冲振荡。故 update_command 前把健康机 vel_z
+        # 还原为算法自己的上步输出(_alg_velz)，使算法 z 保持纯自然(鸟群+三维避障)且不累积。
+        for i, d in enumerate(self.swarm.drones):
+            if getattr(d.drone_state, "value", d.drone_state) == "Normal" and i in self._alg_velz:
+                d.vel_xyz[2] = self._alg_velz[i]
         self.swarm.update_command(self.params.p_swarm, self.params.p_swarm.r_coll, self.dt)
-        # 方案D（温和趋势调节）：滑杆仅便于调节集群高度，**非硬性约束、接近即可、不钉死、不极端**；
-        #   鸟群感=算法自然涌现（初始随机+自主避障+凝聚），不用代码保持。
-        #   整体趋势：c=clamp(0.1*(H-h_center),±1) 小增益小限幅，死区(±2m)内不干预 → 集群自行升降接近H。
-        #   避让中(近故障机)：不加趋势 → 算法 z 自由（三维避障）。
-        #   温和地面排斥：个体<8m 时梯度向上(max1) 防避让压地/穿地；**不推过楼顶**(防攀升极高)，
-        #     建筑碰撞交给水平圆柱避障。
-        normals = [d for d in self.swarm.drones
-                   if getattr(d.drone_state, "value", d.drone_state) == "Normal"]
-        if normals:
+        for i, d in enumerate(self.swarm.drones):
+            if getattr(d.drone_state, "value", d.drone_state) == "Normal":
+                self._alg_velz[i] = float(d.command[3])     # 记录算法z(限幅后,未加偏移)作下步参考
+        # 方案E（平滑垂直控制）：滑杆仅便于调节集群高度（非硬性/接近即可/不钉死/不极端）；
+        #   鸟群感=算法自然涌现不用代码保持；**平滑攀升/平滑下降**：所有垂直控制量经加速度限制
+        #   渐变（趋势 c_smooth + 每机 vz_smooth），消除死区边界/避让半径/注入恢复/地面排斥的一切
+        #   跳变 → 无振荡，集群中心平滑接近滑杆高度。
+        norm_idx = [i for i, d in enumerate(self.swarm.drones)
+                    if getattr(d.drone_state, "value", d.drone_state) == "Normal"]
+        if norm_idx:
+            normals = [self.swarm.drones[i] for i in norm_idx]
             faults = [d.pos_ned for d in self.swarm.drones
                       if getattr(d.drone_state, "value", d.drone_state) != "Normal"]
             r_avoid = 3.0 * float(self.params.p_swarm.d_ref)   # 避让影响半径(同算法故障排斥范围)
@@ -178,19 +189,26 @@ class SimController:
             dead = 2.0                                          # 死区：接近H后不干预(非钉死)
             if abs(self.h_target - h_center) > dead:
                 lim = 3.0 if self.h_target <= 0 else 1.0        # 无人车模式快速贴地; 飞行温和
-                c = max(-lim, min(lim, 0.1 * (self.h_target - h_center)))   # 温和整体趋势
+                c_t = max(-lim, min(lim, 0.1 * (self.h_target - h_center)))
             else:
-                c = 0.0
+                c_t = 0.0
+            # 趋势平滑(加速度限制 0.5 m/s²): 去除死区边界/注入恢复等跳变 → 平滑攀升/下降
+            self._c_smooth += max(-0.5 * self.dt, min(0.5 * self.dt, c_t - self._c_smooth))
+            c = self._c_smooth
             h_floor = 8.0                                       # 温和地面排斥起始高度
-            for d, av in zip(normals, avoiding):
-                vz = d.command[3]                               # 算法z(自然, 含避让三维)
-                if not av and c != 0.0:
-                    vz -= c                                     # 非避让: 加温和整体趋势(避让中自由)
+            a_z = 2.0                                           # 垂直加速度限制(平滑, 消振荡)
+            for i, d, av in zip(norm_idx, normals, avoiding):
+                vz_t = d.command[3]                             # 算法z(自然, 含避让三维)
+                if not av:
+                    vz_t -= c                                   # 非避让: 加平滑整体趋势(避让中自由)
                 h_i = -d.pos_ned[2]
                 if self.h_target > 0 and h_i < h_floor:
-                    # 温和地面排斥(防压地/穿地): 梯度向上, 不推过楼顶
-                    vz -= min(1.0, 0.3 * (h_floor - h_i))
-                d.command[3] = vz
+                    vz_t -= min(1.0, 0.3 * (h_floor - h_i))    # 温和地面排斥(连续梯度, 不推楼顶)
+                # 垂直速度平滑(加速度限制): 消除避让/注入/趋势/地面一切跳变 → 无振荡
+                vz_s = self._vz_smooth.get(i, vz_t)
+                vz_s += max(-a_z * self.dt, min(a_z * self.dt, vz_t - vz_s))
+                self._vz_smooth[i] = vz_s
+                d.command[3] = vz_s
         fad = self._fad()
         self.swarm.fad = fad
         self.swarm.update_state(self.wind, self.time, fad)
