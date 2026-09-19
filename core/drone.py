@@ -32,6 +32,7 @@ from scipy.integrate import solve_ivp
 
 from ..physics import (forces_moments_quad, forces_moments_wing, kinematics_ode_fun)
 from ..control.autopilot_quad import autopilot_quad
+from ..control.autopilot_wing import autopilot_wing
 
 
 def _jet(n: int) -> np.ndarray:
@@ -238,7 +239,7 @@ class Drone:
             if self.drone_type == DroneType.QUADCOPTER:
                 temp = autopilot_quad(self, time)
             else:
-                raise NotImplementedError("fixed_wing 自动驾驶仪(autopilot_wing)待迁移")
+                temp = autopilot_wing(self, 0, time)
             self.delta = temp[0:4].copy()
             self.full_command = temp[4:].copy()
             self.compute_dynamics(wind, time)

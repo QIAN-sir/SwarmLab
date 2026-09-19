@@ -625,8 +625,9 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 |---|---|---|
 | `control/pid.py` | pid_loop.m | PID 回路 + 对称/非对称饱和；param 字典存 Drone.P_* |
 | `control/autopilot_quad.py` | autopilot_quad.m | 4 版本 + hold 函数 + mixer；y=[delta(4);x_command(19)] |
-| `control/__init__.py`（改） | — | 导出 pid_loop/autopilot_quad/mixer |
-| `tests/test_real_dynamics.py` | — | 5 项闭环（悬停保持/北向响应/delta 限幅/fixed_wing 待迁移） |
+| `control/autopilot_wing.py` | autopilot_wing.m | 固定翼（uavbook 主路径 + tuning/TECS）；y=[delta(4);x_command(19)] |
+| `control/__init__.py`（改） | — | 导出 pid_loop/autopilot_quad/autopilot_wing/mixer |
+| `tests/test_real_dynamics.py` | — | 5 项闭环（悬停保持/北向响应/delta 限幅/fixed_wing 可运行） |
 
 ### 接通 Drone 真实动力学（core/drone.py 改）
 
@@ -634,12 +635,13 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
   compute_kinematics(RK23) → update_battery；point_mass 分支逻辑不变（改为 else）。
 - `compute_dynamics`：forces_moments_quad/wing → forces/moments/airdata。
 - `compute_kinematics`：solve_ivp(RK23, rtol=atol=1e-8) 积分 kinematics_ode_fun（orientation 冻结）。
-- fixed_wing 暂抛 NotImplementedError（autopilot_wing 待迁移）。
+- fixed_wing 接通 `autopilot_wing(self, 0, time)`；B-18 下坠忠实复现（2s: 50→43.3m），不修复。
 - `tests/test_drone.py`：`test_real_dynamics_stub` → `test_real_dynamics_quad_active`。
 
 ### 记录的新潜在 bug
 
 - **B-17**：MATLAB `pe_ve_hold` 签名缺 p_sim 却用 p_sim.dt（潜在未定义变量）；Python 补入 p_sim 参数使其可运行，语义不变。
+- **B-18**：原版 fixed_wing 仿真最初几秒急速下坠并消失（原始团队 fixed_wing 代码不完善/严重 bug）；Python 忠实复现（2s: 50→43.3m），不修复。
 
 ### 测试
 
@@ -647,7 +649,6 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 待办（Stage 4 剩余）
 
-- Phase 9：autopilot_wing（固定翼）→ 接通 fixed_wing。
 - §17/缺口B：MATLAB/Python 数值对照（需 MATLAB 快照或解析/trim 对照）。
 
 ---

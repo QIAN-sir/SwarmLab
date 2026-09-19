@@ -128,17 +128,6 @@ def test_real_dynamics_quad_active():
     d.command = np.zeros(4)
     d.update_state(np.zeros(6), 0.0, 1.0)   # 应正常运行
     assert np.all(np.isfinite(d.pos_ned))
-    # fixed_wing 自动驾驶仪待迁移 → 仍抛 NotImplementedError
-    bw = build_params("fixed_wing", None)
-    dw = Drone("fixed_wing", "Normal", bw.p_drone, bw.p_battery, bw.p_sim, bw.p_physics, bw.map)
-    dw.set_pos(np.array([0.0, 0.0, -50.0]))
-    dw.command = np.zeros(4)
-    try:
-        dw.update_state(np.zeros(6), 0.0, 1.0)
-        raised = False
-    except NotImplementedError:
-        raised = True
-    assert raised, "fixed_wing 自动驾驶仪待迁移，应抛 NotImplementedError"
 
 
 def _run_all():

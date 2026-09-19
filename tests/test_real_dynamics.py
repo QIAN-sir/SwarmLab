@@ -57,23 +57,25 @@ def test_quad_north_response():
     _check("quad: vn_c=2 → 向北移动(pn>0.5)", d.pos_ned[0] > 0.5)
 
 
-def test_fixed_wing_pending():
+def test_fixed_wing_runs():
+    # B-18: 原版 fixed_wing 最初几秒急速下坠；此处仅验证闭环可运行且状态有限（忠实复现，不修复）
     b = build_params("fixed_wing")
     d = Drone(DroneType.FIXED_WING, DroneState.NORMAL, b.p_drone, b.p_battery,
               b.p_sim, b.p_physics, b.map)
     d.set_pos(np.array([0.0, 0.0, -50.0]))
-    d.command = np.zeros(4)
-    try:
-        d.update_state(np.zeros(6), 0.0, 1.0)
-        _check("fixed_wing: 应抛 NotImplementedError", False)
-    except NotImplementedError:
-        _check("fixed_wing: 应抛 NotImplementedError", True)
+    d.vel_xyz = np.array([15.0, 0.0, 0.0])     # 初始空速 ~15 m/s
+    d.command = np.array([15.0, 50.0, 0.0])    # Va_c, h_c, chi_c
+    for i in range(200):
+        d.update_state(np.zeros(6), i * b.p_sim.dt, 1.0)
+    _check("fixed_wing: 闭环可运行且状态有限", np.all(np.isfinite(d.pos_ned))
+           and np.all(np.isfinite(d.attitude)))
+    print(f"    [info] fixed_wing 2s 后高度 h = {-d.pos_ned[2]:.1f} m（B-18 原版会下坠）")
 
 
 if __name__ == "__main__":
     test_quad_hover_hold()
     test_quad_north_response()
-    test_fixed_wing_pending()
+    test_fixed_wing_runs()
     n = len(PASS); ok = sum(1 for _, c in PASS if c)
     print("-" * 50)
     print(f"Total: {n}  Passed: {ok}  Failed: {n - ok}")

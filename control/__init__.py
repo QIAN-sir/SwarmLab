@@ -10,6 +10,7 @@
 from .true_states import true_states
 from .pid import pid_loop, saturate_sym, saturate_range, new_pid_param
 from .autopilot_quad import autopilot_quad, mixer
+from .autopilot_wing import autopilot_wing
 
 __all__ = ["true_states", "pid_loop", "saturate_sym", "saturate_range",
-           "new_pid_param", "autopilot_quad", "mixer"]
+           "new_pid_param", "autopilot_quad", "mixer", "autopilot_wing"]
