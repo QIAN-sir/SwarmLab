@@ -160,33 +160,44 @@ class SimController:
         if self.done:
             return False
         self.swarm.update_command(self.params.p_swarm, self.params.p_swarm.r_coll, self.dt)
-        # 中心高度保持 + 保留个体 z 分散（鸟群感）+ 个体下限安全保护（防撞地/楼顶）：
-        #   个体 z 速度 = (算法z_i - 均值) + 中心升降c → 中心收敛到 h_target，个体保留高低差异（不一团扁平）；
-        #   个体低于安全高度(地面2m / 建筑顶+2m)时向上推，防避让下压撞地/撞楼。
-        #   h_target=0 → 中心贴地(无人车)，不启用下限保护(地面即z=0，水平靠圆柱避障防楼)。
+        # 方案C（条件式高度恢复）：区分“避让中”与“避让后”，只在不需要三维避障时施加高度约束。
+        #   避让中（健康机近故障机 < r_avoid）：算法 z 完全自由 → 保留三维避障（各方向绕开）。
+        #   避让后/无故障邻居：中心高度保持，把集群中心拉回滑杆高度 h_target → 自动解决
+        #     “避让后停低空不恢复”；个体保留算法相对 z 差异（鸟群感）。
+        #   个体下限安全兜底：低于安全高度(地面2m/建筑顶+2m)时向上推，防撞地/撞楼。
         normals = [d for d in self.swarm.drones
                    if getattr(d.drone_state, "value", d.drone_state) == "Normal"]
         if normals:
-            algz = np.array([d.command[3] for d in normals])
-            mean_algz = float(algz.mean())
-            h_center = float(np.mean([-d.pos_ned[2] for d in normals]))
-            c = max(-3.0, min(3.0, 0.5 * (self.h_target - h_center)))   # 中心升降速度
+            faults = [d.pos_ned for d in self.swarm.drones
+                      if getattr(d.drone_state, "value", d.drone_state) != "Normal"]
+            r_avoid = 3.0 * float(self.params.p_swarm.d_ref)   # 避让影响半径(同算法故障排斥范围)
+            avoiding = [any(np.linalg.norm(d.pos_ned - fp) < r_avoid for fp in faults)
+                        for d in normals]
+            nonavoid = [d for d, av in zip(normals, avoiding) if not av]
+            if nonavoid:
+                mean_algz = float(np.mean([d.command[3] for d in nonavoid]))
+                h_center = float(np.mean([-d.pos_ned[2] for d in normals]))
+                c = max(-3.0, min(3.0, 0.5 * (self.h_target - h_center)))   # 中心升降速度
+            else:
+                mean_algz, c = 0.0, 0.0
             mp = self.params.map
             bn = np.asarray(mp.buildings_north).ravel()
             be = np.asarray(mp.buildings_east).ravel()
             bh = np.asarray(mp.buildings_heights).ravel()
             bw = getattr(mp, "building_width", 0.0) / 2.0
-            for d in normals:
+            for d, av in zip(normals, avoiding):
+                if not av:
+                    # 避让后：中心保持 + 保留个体分散（鸟群感）；c>0=上升→NED z 速度取负
+                    d.command[3] = (d.command[3] - mean_algz) - c
+                # else 避让中：保持算法 z（自由三维避障），不施加中心约束
                 h_i = -d.pos_ned[2]
-                vz_i = (d.command[3] - mean_algz) + c      # 个体分散 + 中心升降
                 h_safe = 0.0 if self.h_target <= 0 else 2.0
                 if self.h_target > 0 and bn.size and bw > 0:
                     inside = (np.abs(d.pos_ned[0] - bn) <= bw) & (np.abs(d.pos_ned[1] - be) <= bw)
                     if inside.any():
                         h_safe = max(h_safe, float(bh[inside].max()) + 2.0)
-                if h_i < h_safe:                            # 个体下限保护：向上推
-                    vz_i = max(vz_i, min(3.0, 1.0 * (h_safe - h_i)))
-                d.command[3] = -vz_i                      # NED z 向下正
+                if h_i < h_safe:                            # 安全兜底：向上推（覆盖）
+                    d.command[3] = -min(3.0, 1.0 * (h_safe - h_i))
         fad = self._fad()
         self.swarm.fad = fad
         self.swarm.update_state(self.wind, self.time, fad)

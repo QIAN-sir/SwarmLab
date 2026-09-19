@@ -57,6 +57,18 @@ def test_gui_window_and_live_sim():
     # 鸟群感：个体高度保留高低差异（非全部锁同一高度的扁平化）
     hs = -ctrl.swarm.get_pos_ned()[2]
     assert float(np.std(hs)) > 0.5, f"个体高度扁平化 (std={np.std(hs):.2f})，应保留鸟群高低差异"
+    # 方案C：避让后自动恢复高度 —— 注入故障避让下压后，恢复 Normal 中心应回 h_target
+    hT = h0 + 20.0
+    ctrl.set_state("Stalled", 0.3)
+    for _ in range(1000):
+        ctrl.apply_live(180, 10, 5)
+        ctrl.step()
+    ctrl.set_state("Normal", 0.3)
+    for _ in range(1500):
+        ctrl.apply_live(180, 10, 5)
+        ctrl.step()
+    h_back = -float(ctrl.swarm.get_pos_ned()[2].mean())
+    assert abs(h_back - hT) < 5.0, f"避让后未自动恢复高度 (h={h_back:.1f}, target={hT:.1f})"
     ctrl.h_target = 0.0
     for _ in range(3000):
         ctrl.apply_live(180, 10, 5)
