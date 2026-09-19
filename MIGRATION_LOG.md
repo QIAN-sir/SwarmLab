@@ -936,6 +936,32 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 12 —— GUI 集体垂直控制组件（集群集体升/降）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（test_gui 含垂直断言 1/1；全量 **232/232**）
+**需求**：避让上方故障机后健康机下压到低空，因群体算法迁移项 `u_ref` 仅在水平面、
+垂直方向无恢复力而**停在低空不恢复**；加组件手动控制集群集体向上/向下飞以恢复高度。
+
+### 修改
+
+| 文件 | 改动 |
+|---|---|
+| `gui/desktop_app.py` | 右列加「集体垂直速度 [m/s]（正=上升/负=下降）」滑杆(-5..+5, 默认0)+label；`SimController.vz_up`；`step` 里 `vz_up≠0` 时**覆盖**健康机 `command[3] = -vz_up`（NED 向下正）；`_tick` 实时读滑杆 |
+| `tests/test_gui.py` | 加垂直控制断言：vz_up=2→集群上升(z减小)；vz_up=-2→下降 |
+
+### 关键设计：覆盖而非叠加
+
+- 叠加式（`command[3] -= vz`）会与算法**加速度限幅**交互：限幅使 `vel_command` 追踪实际 `vel`，
+  每步再叠加 `vz` → `vel` 逐歩跳变累积（实测冲到 -38 m/s，远超 max_v=7），下降时 vel 仍负故失效。
+- 覆盖式（`command[3] = -vz_up`）使 `vel_z` 精确等于目标，无累积；`vz_up=0` 时不干预，
+  算法（含避让 z 排斥）全权。故障机（Stalled/Drifting）不受控（不用 command）。
+
+### 验证
+
+- `test_gui` 1/1（含 vz_up 正=上升/负=下降断言）；全量 **232/232**。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -962,7 +988,7 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
 | `simulation/result_dir.py` | ✅ | `new_result_dir`/`RESULT_ROOT`（result/<alg>_<ts>/，Stage 10） |
 | `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`(含 FrameVideoWriter)（Stage 9/11） |
-| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3）+ 每次仿真自动记录 result/ + 交互视角视频（Stage 11） |
+| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3）+ 每次仿真自动记录 result/ + 交互视角视频（Stage 11）+ 集体垂直控制滑杆（Stage 12） |
 | `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
 | `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |
 | `guidance/` | ✅ | plan_RRT + path_manager_quad/wing + path_follower_quad/wing + dubins（Stage 5/7） |

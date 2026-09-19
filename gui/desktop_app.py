@@ -120,6 +120,7 @@ class SimController:
         self.end_time = float(end_time)
         self.current_state = "Normal"
         self.swarm.t_fault = 0.0
+        self.vz_up = 0.0               # 集体垂直速度 [m/s]（正=上升），GUI 滑杆实时设置
         self.done = False
         self.pos_history = []          # 每帧 (3,N)
         self.vel_history = []          # 每帧 (3,N)（结果性能图用）
@@ -159,6 +160,15 @@ class SimController:
         if self.done:
             return False
         self.swarm.update_command(self.params.p_swarm, self.params.p_swarm.r_coll, self.dt)
+        # 集体垂直控制：覆盖（非叠加）健康机速度指令 z（NED 向下正；vz_up>0=上升→z 速度负）。
+        # 背景：群体算法迁移项 u_ref 仅在水平面，避让故障机下压后无垂直恢复力，
+        # 健康机会停在低空；本组件供手动集体升/降以恢复高度。
+        # 用覆盖而非叠加：叠加会与算法加速度限幅交互产生逐歩累积过冲（vel 冲超 max_v）；
+        # 覆盖使 vel_z 精确等于目标；vz_up=0 时不干预，算法（含避让 z 排斥）全权。
+        if self.vz_up != 0.0:
+            for d in self.swarm.drones:
+                if getattr(d.drone_state, "value", d.drone_state) == "Normal":
+                    d.command[3] = -self.vz_up
         fad = self._fad()
         self.swarm.fad = fad
         self.swarm.update_state(self.wind, self.time, fad)
@@ -483,6 +493,18 @@ class MainWindow(QMainWindow):
         self.vref_slider.valueChanged.connect(lambda v_: self.vref_label.setText(f"{v_} m/s"))
         v.addWidget(self.vref_label)
 
+        # 集体垂直控制（运行中实时）：避让故障机下压后可手动集体升/降恢复高度
+        v.addWidget(self._center_label("集体垂直速度 [m/s]（正=上升 / 负=下降）", bold=True))
+        _vz = QHBoxLayout(); _vz.setSpacing(6)
+        _vz.addWidget(QLabel("-5"))
+        self.vz_slider = self._slider(-5, 5, 0)
+        _vz.addWidget(self.vz_slider, stretch=1)
+        _vz.addWidget(QLabel("+5"))
+        v.addLayout(_vz)
+        self.vz_label = self._center_label("0 m/s（保持）")
+        self.vz_slider.valueChanged.connect(self._on_vz_changed)
+        v.addWidget(self.vz_label)
+
         v.addWidget(self._center_label("仿真参数设置", bold=True))
         row = QHBoxLayout(); row.addStretch()
         row.addWidget(QLabel("仿真时长 [s]"))
@@ -532,6 +554,10 @@ class MainWindow(QMainWindow):
             return "Drifting"
         return "Normal"
 
+    def _on_vz_changed(self, v_):
+        txt = "保持" if v_ == 0 else ("上升" if v_ > 0 else "下降")
+        self.vz_label.setText(f"{v_} m/s（{txt}）")
+
     # ------------------------------------------------------------------
     def _tick(self):
         c = self.controller
@@ -546,6 +572,7 @@ class MainWindow(QMainWindow):
             return
         # 实时参数 → 每步生效
         c.apply_live(self.compass.value(), self.dref_slider.value(), self.vref_slider.value())
+        c.vz_up = float(self.vz_slider.value())      # 集体垂直速度（运行中实时）
         c.set_state(self._current_state(), self.loss_slider.value() / 100.0)
         steps = max(1, int(round(0.04 / c.dt)))     # ≈ 实时
         for _ in range(steps):

@@ -43,6 +43,22 @@ def test_gui_window_and_live_sim():
     ctrl = win.controller
     rd = win._result_dir          # 自动记录的结果目录（测试后清理）
 
+    # 集体垂直控制：vz_up>0 → 健康机集体上升（NED z 减小）；vz_up<0 → 下降
+    ctrl.vz_up = 2.0
+    z0 = float(ctrl.swarm.get_pos_ned()[2].mean())
+    for _ in range(20):
+        ctrl.apply_live(180, 10, 5)
+        ctrl.step()
+    z1 = float(ctrl.swarm.get_pos_ned()[2].mean())
+    assert z1 < z0 - 0.1, "vz_up>0 未使集群上升"
+    ctrl.vz_up = -2.0
+    for _ in range(20):
+        ctrl.apply_live(180, 10, 5)
+        ctrl.step()
+    z2 = float(ctrl.swarm.get_pos_ned()[2].mean())
+    assert z2 > z1 + 0.1, "vz_up<0 未使集群下降"
+    ctrl.vz_up = 0.0
+
     # 实时故障注入：Stalled, loss=0.3, nb=4 → ceil(1.2)=2 架
     ctrl.apply_live(180, 10, 5)
     ctrl.set_state("Stalled", 0.3)
