@@ -83,7 +83,7 @@ def _marker_geoms(s):
     三棱锥俯视图为三角形，与正方体的方形俯视图明确区分。"""
     sphere = pv.Sphere(radius=s)
     cube = pv.Cube(x_length=2 * s, y_length=2 * s, z_length=2 * s)
-    r = 1.155 * s   # 2*s/sqrt(3)：使三棱锥包围盒≈2s，与球直径/立方边长视觉尺寸一致
+    r = 1.5 * s   # 2*s/sqrt(3)：此处修改三棱锥大小
     pts = [(0, r, -s), (-0.866 * r, -0.5 * r, -s), (0.866 * r, -0.5 * r, -s), (0, 0, s)]
     faces = [3, 0, 1, 2,
              3, 0, 1, 3,
@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
         if self.use_pv:
             self.pview = QtInteractor(parent=view)
             vv.addWidget(self.pview, stretch=3)
-            self.pview.set_background("white")
+            self.pview.set_background("#e8f0f8")   # 淡蓝天空背景，与地面区分
             # 地形交互风格：自由旋转时锁定世界 Z 为 up，地面保持水平（类似 matplotlib 3D），不滚转斜置
             self.pview.enable_terrain_style()
             self.fig = None
@@ -688,6 +688,11 @@ class MainWindow(QMainWindow):
     def _pv_init(self):
         self.pview.clear()
         mp = self.controller.params.map
+        # 地面（z=0 平面）：使地面与背景区分、有实地感（不再一片白）
+        gc = (mp.width / 2.0, mp.width / 2.0, 0.0)
+        gs = mp.width * 1.6 if getattr(mp, "ACTIVE_ENVIRONMENT", False) else 240.0
+        self.pview.add_mesh(pv.Plane(center=gc, i_size=gs, j_size=gs),
+                            color="#cde6c5", show_edges=False, reset_camera=False)
         if getattr(mp, "ACTIVE_ENVIRONMENT", False):
             bn = np.asarray(mp.buildings_north).ravel()
             be = np.asarray(mp.buildings_east).ravel()
