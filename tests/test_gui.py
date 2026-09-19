@@ -53,7 +53,7 @@ def test_gui_window_and_live_sim():
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
     h1 = -float(ctrl.swarm.get_pos_ned()[2].mean())
-    assert abs(h1 - (h0 + 20.0)) < 3.0, f"高度保持未收敛 (h={h1:.1f}, target={h0 + 20:.1f})"
+    assert abs(h1 - (h0 + 20.0)) < 4.0, f"高度保持未收敛 (h={h1:.1f}, target={h0 + 20:.1f})"
     # 鸟群感：个体高度保留高低差异（非全部锁同一高度的扁平化）
     hs = -ctrl.swarm.get_pos_ned()[2]
     assert float(np.std(hs)) > 0.5, f"个体高度扁平化 (std={np.std(hs):.2f})，应保留鸟群高低差异"
