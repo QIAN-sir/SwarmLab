@@ -25,7 +25,7 @@ def path_manager_quad(in_, p_drone, p_sim, st):
         Va_d = p_drone.Va0
         NN = 1 + 5 * p_drone.size_wpt_array
         pn, pe, h = in_[NN], in_[NN + 1], in_[NN + 2]
-        chi = in_[NN + 8]
+        chi = in_[NN + 12]   # B-11 统一：canonical z_hat chi@12（原 MATLAB 按 B-M 布局误读 @8）
         r = np.array([pn, pe, -h])
         q = np.array([np.cos(chi), np.sin(chi), 0.0])
         c = np.zeros(3)

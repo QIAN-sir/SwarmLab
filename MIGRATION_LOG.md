@@ -744,6 +744,58 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 7 —— 固定翼路径 + B-18/B-11 修复（Phase 11-wing）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（path_wing 27/27 + real_dynamics 9/9；全量 **173/173**）
+**授权**：承 Stage 6，对重大功能性 bug 定位根因+理解意图+修复+记录。
+
+### 新增文件
+
+| 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `guidance/dubins.py` | compute_dubins_param.m | Dubins 参数（RSR/RSL/LSR/LSL 取最短）+ Rz + wrapTo2Pi；返回 dict |
+| `guidance/path_manager_wing.py` | path_manager_wing.m + path_manager_fillet.m + path_manager_dubins.m | 固定翼路径管理（nb0 直线 / fillet / dubins 6状态机）；out(30)；persistent→状态字典 |
+| `tests/test_path_wing.py` | — | 27 项（dubins 几何 / 三分支 / follower 直线·orbit / B-11 chi@12 / wing 闭环不下坠） |
+
+### 修改文件
+
+| 文件 | 改动 |
+|---|---|
+| `guidance/path_follower.py` | 新增 `path_follower_wing`（直线/orbit→[Va_c,h_c,chi_c,phi_ff]）；quad chi 索引 @8→@12（B-11） |
+| `guidance/path_manager.py` | quad nb0 分支 chi @8→@12（B-11） |
+| `guidance/__init__.py` | 导出 wing 组件 + compute_dubins_param |
+| `core/drone.py` | **B-18**：构造时 fixed_wing 调 `_init_fixed_wing_trim()`；manage_path/follow_path 接通 fixed_wing 分支 |
+| `tests/test_real_dynamics.py` | `test_fixed_wing_runs`→`test_fixed_wing_trim_flight`（断言平飞不下坠） |
+
+### 修复的重大 bug（根因 / 意图 / 修复 / 影响）
+
+- **B-18（修复）固定翼下坠消失**：根因=trim 初始条件（xyu_T）虽已算入 `p_drone.*_T`，但原版从未应用到 drone 状态；`example_controller` 仅 `set_pos`（vel=0/delta=0），`generate_command` 给 wing 命令 `Va_c=0`（B-23）→ 零空速/零油门起步、升力≈0 → 急速下坠。意图=以配平空速 `Va_T=35`、配平姿态、配平舵偏（`de_T=-0.049`/`dt_T=0.4555`）平飞。修复：Drone 构造时 fixed_wing 置 vel/attitude/rates/delta 到 trim。验证：3s `h` 稳在 49.8（掉<0.4m）、`Va→35.0`、`delta` 自动收敛到 `[de_T,dt_T]`（autopilot PID 积分器自然收敛，**无需 trim 前馈**）。
+- **B-11（修复·完整）z_hat 布局统一**：Stage 6 已修 `estimate_states`；本阶段发现 **guidance 亦用 Beard-McLain 布局**（chi@state[8]、Va@3），而 `true_states`/autopilot 用 canonical（chi@12、Va@6）→ path_manager/path_follower（quad+wing）读 chi 错位（读到 beta）。修复：统一 guidance 到 canonical，chi 索引 @8→@12（pn/pe/h@0/1/2 两布局一致，无需改）；含回修 Stage 5 已迁移的 quad guidance（test_guidance 14/14 无回归）。验证：`z_hat[12]=π/2 → path q=[0,1,0]`。
+
+### 记录（example 层，未迁移）
+
+- **B-23**：`generate_command.m` 给 fixed_wing 的命令 `[0 100 0.26 0]` → `Va_c=0`（应≈Va_T）。属 example 层（未迁移）；Python wing 命令由 `path_follower_wing` 产出（`Va_c=Va_d` 合理），故不影响。记录备查。
+
+### 关键实现说明
+
+- wing path 向量长 **30**（`[flag,Va_d,r(3),q(3),c(3),rho,lambda,state(16),flag_new]`），与 quad 的 **33**（多 r_next）不同——两套 MATLAB 文件布局本就不同，各自忠实。
+- `path_manager_dubins` 用 `size_waypoint_array` 解析、`start_of_simulation` 块用 `size_wpt_array`（两者=100，忠实照搬）；`idx_a/idx_b/fillet.idx` 存 0-based。
+- dubins 忠实保留原逻辑（含 case4 `flag_first_time_in_state=0` 先行导致 `==1` 分支恒不触发）。
+
+### 测试
+
+- `test_path_wing` **27/27**；`test_real_dynamics` **9/9**（含 B-18 平飞断言）；全量 **173/173**。
+
+### 里程碑
+
+- ✅ **quad + fixed_wing 两型真实动力学全链路可用**：物理→控制→估计(use_estimation)→路径(规划/管理/跟踪)。B-18 固定翼平飞、B-11 z_hat 全模块（estimation+guidance）统一到 canonical。
+
+### 待办
+
+- Stage 8（Phase 12 真实动力学可视化：DroneViewer quad/wing 机体 3D + plot_state 曲线）。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -772,7 +824,7 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3） |
 | `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
 | `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |
-| `guidance/` | ✅ quad/pm | plan_RRT + path_manager_quad + path_follower_quad（Stage 5）；wing 待补 |
+| `guidance/` | ✅ | plan_RRT + path_manager_quad/wing + path_follower_quad/wing + dubins（Stage 5/7） |
 | `estimation/` | ✅ | lp_filter + estimate_states（LP+2状态EKF，Stage 6；B-11/20/21/22 已修） |
 | 桩（`NotImplementedError`） | ⏳ | plot_state·record_video（P12）；path_manager_wing/path_follower_wing |
 
@@ -864,4 +916,4 @@ draw_buildings(ax, map_params, ...) / draw_cylinders(ax, map_params, ...) / set_
 
 忠实保留（不改，只记录）：B-1…B-8、B-14、B-15、B-16、B-17（补 p_sim 使其可运行）、B-19（详见各 Phase 小节与 `PROJECT_ARCHITECTURE.md` §14）。
 
-用户授权修复（重大功能性 bug，Stage 6 起，均记根因/意图/改动于对应 Stage 小节）：**B-11**（估计 z_hat 布局对齐 true_states）、**B-20**（lp_filter 退化→带记忆真滤波）、**B-21**（accel_z 用 fz）、**B-22**（EKF 门限 `abs(‖z‖-g)`）；**B-18**（固定翼下坠，Stage 7 待修）。
+用户授权修复（重大功能性 bug，均记根因/意图/改动于对应 Stage 小节）：**B-11**（z_hat 布局统一到 canonical：Stage6 修 estimate_states、Stage7 修 guidance 的 chi@8→@12）、**B-18**（固定翼下坠→trim 初始化平飞，Stage7）、**B-20**（lp_filter 退化→带记忆真滤波）、**B-21**（accel_z 用 fz）、**B-22**（EKF 门限 `abs(‖z‖-g)`）。example 层未迁移但记录：**B-23**（generate_command 给 wing 的 Va_c=0）。

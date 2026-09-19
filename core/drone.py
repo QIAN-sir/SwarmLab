@@ -37,7 +37,8 @@ from ..control.autopilot_quad import autopilot_quad
 from ..control.autopilot_wing import autopilot_wing
 from ..guidance.path_planner import plan_RRT
 from ..guidance.path_manager import path_manager_quad, new_pm_state
-from ..guidance.path_follower import path_follower_quad
+from ..guidance.path_manager_wing import path_manager_wing, new_pm_state_wing
+from ..guidance.path_follower import path_follower_quad, path_follower_wing
 
 
 def _jet(n: int) -> np.ndarray:
@@ -174,6 +175,10 @@ class Drone:
         self.use_estimation = False
         self.drift_initialized = False  # 用于判断是否已记录失控速度（二次开发）
 
+        # ---- B-18 修复：固定翼按配平条件初始化（原版缺失→未配平起步→急速下坠消失）----
+        if drone_type == DroneType.FIXED_WING:
+            self._init_fixed_wing_trim()
+
     # ==================================================================
     # 历史累加辅助（对应 MATLAB 的 isempty 判断 + [history; v'] 追加）
     # ==================================================================
@@ -192,6 +197,23 @@ class Drone:
     # ==================================================================
     # 初始化 / 状态访问器
     # ==================================================================
+    def _init_fixed_wing_trim(self) -> None:
+        """B-18 修复：固定翼按配平条件初始化 vel/attitude/rates/delta。
+
+        根因：param_fixed_wing 的 trim 初始条件（xyu_T）虽已算入 p_drone.*_T，但原版
+        从未应用到 drone 状态；example_controller 仅 set_pos（vel=0/delta=0），且
+        generate_command 给 wing 的命令 Va_c=0（B-23）。→ wing 以零空速/零油门起步，
+        升力≈ 0，最初几秒急速下坠消失。
+        意图：固定翼应以配平空速 Va_T、配平姿态、配平舵偏（de_T/dt_T）平飞。
+        修复：构造时用 p_drone 的 trim 字段初始化状态与 delta；autopilot 的 PID 积分器
+        随后自然收敛回 trim（实验验证：h 稳定、Va→Va_T、delta→[de_T,dt_T]）。
+        """
+        p = self.p_drone
+        self.vel_xyz = np.array([p.vx_T, p.vy_T, p.vz_T])
+        self.attitude = np.array([p.phi_T, p.theta_T, p.psi_T])
+        self.rates = np.array([p.p_T, p.q_T, p.r_T])
+        self.delta = np.array([p.de_T, p.da_T, p.dr_T, p.dt_T])
+
     def init_rand_pos(self, map_size) -> None:
         """INIT_RAND_POS: 在地图上随机初始化位置。"""
         self.pos_ned = np.asarray(map_size, dtype=float).reshape(3) * np.random.rand(3)
@@ -408,21 +430,25 @@ class Drone:
             self.waypoints = wpt_list.flatten()
 
     def manage_path(self, time) -> None:
-        """MANAGE_PATH（Drone.m manage_path）。quad/point_mass→path_manager_quad；wing 待迁移。"""
+        """MANAGE_PATH（Drone.m manage_path）。quad/point_mass→path_manager_quad；fixed_wing→path_manager_wing。"""
         size = self.p_drone.size_wpt_array
         wv = np.zeros(5 * size) if self.waypoints is None else np.asarray(self.waypoints, float).ravel()
         in_ = np.concatenate([[self.nb_waypoints or 0], wv, self.z_hat, [time]])
         if self.drone_type == DroneType.FIXED_WING:
-            raise NotImplementedError("path_manager_wing 待迁移")
-        if self.pm_state is None:
-            self.pm_state = new_pm_state()
-        self.path = path_manager_quad(in_, self.p_drone, self.p_sim, self.pm_state)
+            if self.pm_state is None:
+                self.pm_state = new_pm_state_wing()
+            self.path = path_manager_wing(in_, self.p_drone, self.p_sim, self.pm_state)
+        else:
+            if self.pm_state is None:
+                self.pm_state = new_pm_state()
+            self.path = path_manager_quad(in_, self.p_drone, self.p_sim, self.pm_state)
 
     def follow_path(self) -> None:
-        """FOLLOW_PATH（Drone.m follow_path）。quad/point_mass→path_follower_quad；wing 待迁移。"""
+        """FOLLOW_PATH（Drone.m follow_path）。quad/point_mass→path_follower_quad；fixed_wing→path_follower_wing。"""
         if self.drone_type == DroneType.FIXED_WING:
-            raise NotImplementedError("path_follower_wing 待迁移")
-        self.command = path_follower_quad(self.path, self.p_drone)
+            self.command = path_follower_wing(self.path, self.p_drone)
+        else:
+            self.command = path_follower_quad(self.path, self.p_drone)
 
     # ==================================================================
     # 可视化（桩化，Phase 12）

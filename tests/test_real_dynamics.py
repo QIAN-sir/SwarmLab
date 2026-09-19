@@ -57,25 +57,31 @@ def test_quad_north_response():
     _check("quad: vn_c=2 → 向北移动(pn>0.5)", d.pos_ned[0] > 0.5)
 
 
-def test_fixed_wing_runs():
-    # B-18: 原版 fixed_wing 最初几秒急速下坠；此处仅验证闭环可运行且状态有限（忠实复现，不修复）
+def test_fixed_wing_trim_flight():
+    # B-18 修复：固定翼构造时已按 trim 初始化 vel/attitude/delta；给配平空速命令应平飞不下坠。
     b = build_params("fixed_wing")
-    d = Drone(DroneType.FIXED_WING, DroneState.NORMAL, b.p_drone, b.p_battery,
+    pd = b.p_drone
+    d = Drone(DroneType.FIXED_WING, DroneState.NORMAL, pd, b.p_battery,
               b.p_sim, b.p_physics, b.map)
-    d.set_pos(np.array([0.0, 0.0, -50.0]))
-    d.vel_xyz = np.array([15.0, 0.0, 0.0])     # 初始空速 ~15 m/s
-    d.command = np.array([15.0, 50.0, 0.0])    # Va_c, h_c, chi_c
-    for i in range(200):
+    d.set_pos(np.array([0.0, 0.0, -50.0]))          # h=50（构造函数已置 trim vel/attitude/delta）
+    d.command = np.array([pd.Va_T, 50.0, 0.0, 0.0])  # Va_c=Va_T, h_c=50, chi_c=0
+    hs = []
+    for i in range(300):
         d.update_state(np.zeros(6), i * b.p_sim.dt, 1.0)
-    _check("fixed_wing: 闭环可运行且状态有限", np.all(np.isfinite(d.pos_ned))
+        hs.append(-d.pos_ned[2])
+    _check("fixed_wing: 闭环状态有限", np.all(np.isfinite(d.pos_ned))
            and np.all(np.isfinite(d.attitude)))
-    print(f"    [info] fixed_wing 2s 后高度 h = {-d.pos_ned[2]:.1f} m（B-18 原版会下坠）")
+    _check("fixed_wing B-18: 3s 不下坠（h∈[45,55]）", 45.0 < hs[-1] < 55.0)
+    _check("fixed_wing B-18: 最大下坠 <5m", (50.0 - min(hs)) < 5.0)
+    _check("fixed_wing B-18: 空速收敛到 Va_T", abs(d.z_hat[6] - pd.Va_T) < 1.0)
+    _check("fixed_wing B-18: 油门收敛到 trim dt_T", abs(d.delta[3] - pd.dt_T) < 0.05)
+    print(f"    [info] fixed_wing 3s: h={hs[-1]:.2f}m Va={d.z_hat[6]:.2f} dt={d.delta[3]:.4f}(trim {pd.dt_T:.4f})")
 
 
 if __name__ == "__main__":
     test_quad_hover_hold()
     test_quad_north_response()
-    test_fixed_wing_runs()
+    test_fixed_wing_trim_flight()
     n = len(PASS); ok = sum(1 for _, c in PASS if c)
     print("-" * 50)
     print(f"Total: {n}  Passed: {ok}  Failed: {n - ok}")
