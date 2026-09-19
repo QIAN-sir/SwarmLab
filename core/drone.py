@@ -30,7 +30,9 @@ from ..enums import DroneType, DroneState
 from ..control.true_states import true_states
 from scipy.integrate import solve_ivp
 
-from ..physics import (forces_moments_quad, forces_moments_wing, kinematics_ode_fun)
+from ..physics import (forces_moments_quad, forces_moments_wing, kinematics_ode_fun,
+                       sensors, gps, new_gps_state)
+from ..estimation import estimate_states as estimate_states_fn, new_est_state
 from ..control.autopilot_quad import autopilot_quad
 from ..control.autopilot_wing import autopilot_wing
 from ..guidance.path_planner import plan_RRT
@@ -95,6 +97,10 @@ class Drone:
         self.y = None                  # sensor measurements
         self.z_hat = np.zeros(22)      # estimated extended state
         self.airdata = np.zeros(6)
+
+        # ---- Estimation persistent state（Phase 10；MATLAB persistent → 状态字典，计划 §10）----
+        self.gps_state = new_gps_state()   # gps.m persistent mp_n/mp_e/mp_h
+        self.est_state = new_est_state()   # estimate_states.m persistent x/kf_P (+ LP 通道记忆)
 
         # ---- Command ----
         self.command = np.zeros(4)
@@ -457,16 +463,26 @@ class Drone:
         self.rates = xnew[9:12].copy()
 
     def update_sensor_measurements(self) -> None:
-        """UPDATE_SENSOR_MEASUREMENTS: 更新传感器测量（仅 use_estimation=True 时）。"""
+        """UPDATE_SENSOR_MEASUREMENTS: 更新传感器测量（仅 use_estimation=True 时）。
+
+        MATLAB: y_imu_baro = sensors(get_state, forces, airdata, p_drone, p_physics);
+                y_gps = gps(get_state, p_sim.dt, p_drone);  self.y = [y_imu_baro; y_gps]
+        注：forces/airdata 为上一步 compute_dynamics 的结果（一步滞后，与 MATLAB 一致）。
+        """
         if self.use_estimation:
-            # MATLAB: y_imu_baro = sensors(...); y_gps = gps(...); self.y = [...]
-            raise NotImplementedError("传感器仿真依赖 sensors/gps，见 Phase 10")
+            y_imu_baro = sensors(self.get_state(), self.forces, self.airdata,
+                                 self.p_drone, self.p_physics)
+            y_gps = gps(self.get_state(), self.p_sim.dt, self.p_drone, self.gps_state)
+            self.y = np.concatenate([y_imu_baro, y_gps])
         # use_estimation=False：无操作（与 MATLAB 一致）
 
     def estimate_states(self, time) -> None:
-        """估计状态 z_hat（use_estimation=False 时用 true_states）。"""
+        """估计状态 z_hat（use_estimation=True→estimate_states；False→true_states）。"""
         if self.use_estimation:
-            raise NotImplementedError("EKF 状态估计依赖 estimation，见 Phase 10")
+            # MATLAB: self.z_hat = estimate_states(self.y, time, p_sim.dt, p_drone, p_physics)
+            # B-11 修复后 estimate_states 输出与 true_states 同布局，自驾仪索引一致。
+            self.z_hat = estimate_states_fn(self.y, time, self.p_sim.dt,
+                                            self.p_drone, self.p_physics, self.est_state)
         else:
             # MATLAB: self.z_hat = true_states([self.get_state(); self.airdata; time]);
             self.z_hat = true_states(np.concatenate([self.get_state(), self.airdata, [time]]))

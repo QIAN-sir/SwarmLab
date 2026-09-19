@@ -698,6 +698,52 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 6 —— 状态估计（Phase 10：sensors + gps + lp_filter + estimate_states + 接通）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（estimation 32/32；全量 **142/142**）
+**授权**：用户明确要求——对破坏预期功能的重大 MATLAB bug，定位根因 + 理解意图 + 修复 + 记录（非忠实复现）。见记忆《SwarmLab_py 重大功能性 MATLAB bug 的修复授权与流程》。
+
+### 新增文件
+
+| 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `physics/sensors.py` | physics/sensors.m | IMU+气压计测量 y(8)（normrnd→np.random.normal）；含 B-21 修复 |
+| `physics/gps.py` | physics/gps.m | GPS 测量 y(5)；persistent Markov `mp_n/e/h`→状态字典（`Drone.gps_state`） |
+| `estimation/lp_filter.py` | estimation/lp_filter.m | 一阶低通公式 + `lp_step`（带各通道记忆，B-20 修复） |
+| `estimation/estimate_states.py` | estimation/estimate_states.m | LP + 2 状态(phi/theta) EKF；persistent `x/kf_P`→`Drone.est_state`；B-11/B-22 修复 |
+| `estimation/__init__.py` | — | 导出 lp_filter/lp_step/estimate_states/new_est_state |
+| `tests/test_estimation.py` | — | 32 项（零噪声手算 + 4 bug 修复行为 + Drone 接线 + EKF 稳定性） |
+
+### 接通 Drone（core/drone.py 改）
+
+- `update_sensor_measurements`：`use_estimation=True` → `y=[sensors();gps()]`（forces/airdata 用上一步值，一步滞后，同 MATLAB）。
+- `estimate_states`：`use_estimation=True` → `estimate_states(y,...)`；`False` → `true_states`（不变）。
+- 新增 `Drone.gps_state` / `Drone.est_state`（persistent→状态字典，计划 §10）。
+
+### 修复的重大 bug（计划 §2.3 用户授权：根因 / 意图 / 修复 / 影响）
+
+- **B-11（修复）**：`estimate_states` 的 z_hat 布局与 `true_states`/自驾仪索引不一致（原把 chi 放 idx11、p/q/r 放 12-14、psi 放 18）。根因=两套排序约定漂移；意图=与 `true_states` 统一规范布局。修复：按 `[pn,pe,h,vx,vy,vz,Va,alpha,beta,phi,theta,psi,chi,p,q,r,Vg,wn,we,bx,by,bz]` 输出。影响：`use_estimation=True` 时自驾仪读到正确槽位（否则速度=0、角速率/航向错位）。
+- **B-22（修复）**：EKF 更新门限 `norm(z-gravity)<0.5`（把标量 g 从每个加速度分量减）几乎永不触发→phi/theta 只预测不更新、姿态估计开环漂移。意图=加速度模≈g 的低动态判据。修复：`abs(norm(z)-gravity)<0.5`。影响：量测更新正常触发、姿态收敛。
+- **B-20（修复）**：`lp_filter(y_prev,u,a,dt)` 无记忆，但调用传 `(测量,0,a,dt)`→退化成 `exp(-a·dt)·测量`。根因=签名重构后调用方未同步。意图=带记忆一阶低通。修复：Estimator 各通道存 prev，按 `(prev,u,a,dt)` 调用（`lp_step`），首次以 u 初始化。
+- **B-21（修复）**：`sensors` 的 `y_accel_z` 误用 `fx/mass`（应 `fz/mass`），上游 EPFL 原版遗留（fault 版与原版逐字节相同）。意图=z 轴加速度计测 z 向比力。修复：改用 `fz`。影响：动态下 phi/theta EKF 量测正确。
+
+### 估计器适用边界（重要，忠实记录）
+
+- `estimate_states` 本质是**固定翼风格**估计器：估计 `{pn,pe,h,Va,phi,theta,chi,p,q,r,Vg}`；**不估计机体速度 vx/vy/vz 与偏航 psi**（原版即置 0；传感器套件无磁力计，yaw 不可观测）。
+- **fixed_wing**：闭环验证 z_hat 全有限、h/Va/chi 估计正确（50 步 `h_est≈50.0`、`Va_est≈13.9`、`chi_est≈0`）。
+- **quadcopter**：姿态/高度可用，但 (1) `vx/vy/vz=0`、`psi=0`（速度环/偏航无估计反馈）；(2) 近零空速时动压被噪声压负→`Vahat=NaN`（idx6，忠实对应 MATLAB `sqrt(负)`=复数）；**quad 自驾仪不读 idx6**，NaN 不入控制回路（20 步闭环 `h_est≈50.7` vs `h_true≈49.8`，可运行）。→ quad 全状态高保真需另做**增强估计器**（速度可由 GPS vn/ve 重构、yaw 需磁力计），属新开发，未纳入本次迁移。
+
+### 测试
+
+- `test_estimation` **32/32**；全量 **142/142**（原 110 + 估计 32）。
+- 零噪声手算：sensors `accel_z`(B-21)、gps 直通 `[pn,pe,-pd,Vg,course]`、`h`=静压反解=50、`Va`=动压反解=15、`p/q/r`@13/14/15；`estimate_states`↔`true_states` 槽位一致(B-11)；B-22 触发时 `trace(kf_P)` 收缩、跳过时=Q；EKF 水平飞行 500 步有界。
+
+### 待办
+
+- Stage 7（wing 路径 `path_manager_wing`/`path_follower_wing` + `path_manager_dubins` + **B-18 固定翼下坠修复**）、Stage 8（Phase 12 真实动力学可视化 DroneViewer/plot_state）。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -723,7 +769,12 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `control/true_states.py` | ✅ | 伪真值估计（z_hat 22） |
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
 | `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` |
-| 桩（`NotImplementedError`） | ⏳ | Drone 真实动力学(P8)/control(P9)/EKF·sensors(P10)/path(P11)/plot_state·record_video(P12)；GUI(P13) |
+| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3） |
+| `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
+| `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |
+| `guidance/` | ✅ quad/pm | plan_RRT + path_manager_quad + path_follower_quad（Stage 5）；wing 待补 |
+| `estimation/` | ✅ | lp_filter + estimate_states（LP+2状态EKF，Stage 6；B-11/20/21/22 已修） |
+| 桩（`NotImplementedError`） | ⏳ | plot_state·record_video（P12）；path_manager_wing/path_follower_wing |
 
 ### A.2 关键接口签名（核实版）
 
@@ -811,4 +862,6 @@ draw_buildings(ax, map_params, ...) / draw_cylinders(ax, map_params, ...) / set_
 
 ### A.4 忠实保留的 MATLAB bug（不改，只记录）
 
-B-1…B-8、B-14、B-15、B-16（详见各 Phase 小节与 `PROJECT_ARCHITECTURE.md` §14）。
+忠实保留（不改，只记录）：B-1…B-8、B-14、B-15、B-16、B-17（补 p_sim 使其可运行）、B-19（详见各 Phase 小节与 `PROJECT_ARCHITECTURE.md` §14）。
+
+用户授权修复（重大功能性 bug，Stage 6 起，均记根因/意图/改动于对应 Stage 小节）：**B-11**（估计 z_hat 布局对齐 true_states）、**B-20**（lp_filter 退化→带记忆真滤波）、**B-21**（accel_z 用 fz）、**B-22**（EKF 门限 `abs(‖z‖-g)`）；**B-18**（固定翼下坠，Stage 7 待修）。
