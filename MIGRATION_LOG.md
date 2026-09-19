@@ -796,6 +796,48 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 8 —— 真实动力学可视化（Phase 12：DroneViewer + plot_state）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（drone_viz 23/23；全量 **196/196**）
+
+### 新增文件
+
+| 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `visualization/drone_body.py` | define_quad_body.m / define_wing_body.m / rotate.m / translate.m | 机体几何（quad 21顶点9面 / wing 10顶点3面，0-based 面索引）+ 刚体 rotate/translate |
+| `visualization/drone_viewer.py` | graphics_drone/DroneViewer.m | 单机在线 3D：rotate→translate→NED→ENU→Poly3DCollection；point_mass 散点；center_view 跟随；view(32,47) |
+| `visualization/drone_state_plot.py` | @Drone/plot_state.m | DroneStatePlotter：7 组（Position/Velocity/Acceleration/Air data/Attitude/Angle rates/Actuators）real/est/cmd 时序曲线；uitab→GridSpec；persistent 句柄→Line2D |
+| `examples/run_drone_viz.py` | example_controller.m 可视化部分 | demo：quad 悬停 + wing 配平平飞出图（4 张 PNG） |
+| `tests/test_drone_viz.py` | — | 23 项（几何/变换/viewer/plotter headless 存图） |
+
+### 修改文件
+
+| 文件 | 改动 |
+|---|---|
+| `visualization/__init__.py` | 导出 DroneViewer/DroneStatePlotter/define_body/rotate/translate |
+
+### 关键实现说明
+
+- NED→ENU 统一：plot x=east, y=north, z=up（与 SwarmViewer/map_drawing 一致）；DroneViewer 用 `R=[0,1,0;1,0,0;0,0,-1]`。
+- DroneStatePlotter 的 z_hat 用 canonical 布局（B-11 修复后）；full_command(19)/delta 按类型（wing de/da/dr/dt，quad d1-d4）。
+- MATLAB uitab（7 标签页）→ matplotlib 单 figure GridSpec（每组一行，ncols=4）；headless Agg 存图。
+- 未迁移（按需）：draw_waypoints/draw_path（graphics_map）、SwarmViewerOffline（回放）、VideoWriterWithRate（视频）。
+
+### 测试 + demo
+
+- `test_drone_viz` **23/23**；全量 **196/196**。
+- demo `run_drone_viz.py`：quad 悬停 3s h=49.2m；wing 配平平飞 3s h=49.8m/Va=35（B-18 修复后不下坠）；出 4 张 PNG 到 `examples/output/`。
+
+### 里程碑
+
+- ✅ **迁移主线全部阶段完成**（Phase 0-12 + Stage 1-8）：枚举/参数/Drone/Swarm/point_mass 故障/双算法/runner/群体可视化/GUI/真实动力学(物理+控制+估计)/路径(quad+wing)/真实动力学可视化。两型真实动力学全链路 + 可视化齐备。
+
+### 待办（可选收尾）
+
+- SwarmViewerOffline 回放、draw_waypoints/draw_path、视频录制（VideoWriterWithRate）按需。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -820,7 +862,7 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `math_tools/` | ✅ | Rb2i/pos2dist/compute_neighborhood/network_components/compute_swarm_performance |
 | `control/true_states.py` | ✅ | 伪真值估计（z_hat 22） |
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
-| `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` |
+| `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8） |
 | `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3） |
 | `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
 | `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |
