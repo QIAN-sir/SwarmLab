@@ -6,6 +6,7 @@
 导入约定见 MIGRATION_LOG 附录 A.0（_REPO_ROOT=c:\\SwarmLab）。
 """
 import os
+import shutil
 import sys
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -40,6 +41,7 @@ def test_gui_window_and_live_sim():
     win._on_start_toggled(True)
     assert win.controller is not None
     ctrl = win.controller
+    rd = win._result_dir          # 自动记录的结果目录（测试后清理）
 
     # 实时故障注入：Stalled, loss=0.3, nb=4 → ceil(1.2)=2 架
     ctrl.apply_live(180, 10, 5)
@@ -62,6 +64,8 @@ def test_gui_window_and_live_sim():
 
     win._on_start_toggled(False)
     win.close()
+    if rd:
+        shutil.rmtree(rd, ignore_errors=True)   # 清理测试产物，保持 result/ 干净
     print(f"GUI(PySide6) OK: steps={len(ctrl.pos_history)}, stalled_injected={n_stalled}")
 
 

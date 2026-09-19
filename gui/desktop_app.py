@@ -36,7 +36,7 @@ matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DengXian
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 from PySide6.QtCore import Qt, QTimer, Signal                          # noqa: E402
-from PySide6.QtGui import QPainter, QPen, QColor, QFont                # noqa: E402
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QImage        # noqa: E402
 from PySide6.QtWidgets import (                                        # noqa: E402
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGroupBox, QRadioButton, QSlider, QCheckBox, QSpinBox, QLabel, QSizePolicy,
@@ -44,12 +44,18 @@ from PySide6.QtWidgets import (                                        # noqa: E
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg       # noqa: E402
 from matplotlib.figure import Figure                                   # noqa: E402
+import matplotlib.pyplot as plt                                       # noqa: E402
 
 from SwarmLab_py.core import Swarm                                     # noqa: E402
 from SwarmLab_py.enums import DroneState                               # noqa: E402
 from SwarmLab_py.parameters import build_params                        # noqa: E402
 from SwarmLab_py.visualization.map_drawing import (                    # noqa: E402
     draw_buildings, draw_cylinders, set_map_axes)
+from SwarmLab_py.visualization import (                                # noqa: E402
+    plot_trajectories, plot_performance)
+from SwarmLab_py.visualization.video_writer import FrameVideoWriter    # noqa: E402
+from SwarmLab_py.math_tools import compute_swarm_performance           # noqa: E402
+from SwarmLab_py.simulation import new_result_dir                      # noqa: E402
 
 HAVE_PYVISTA = False
 try:
@@ -116,6 +122,7 @@ class SimController:
         self.swarm.t_fault = 0.0
         self.done = False
         self.pos_history = []          # 每帧 (3,N)
+        self.vel_history = []          # 每帧 (3,N)（结果性能图用）
         self.state_history = []        # 每帧 (N,) 状态字符串
         self.min_dist_history = []     # 每帧最小机间距（调试视图用）
 
@@ -157,6 +164,7 @@ class SimController:
         self.swarm.update_state(self.wind, self.time, fad)
         pos = self.swarm.get_pos_ned()
         self.pos_history.append(pos.copy())
+        self.vel_history.append(self.swarm.get_vel_ned().copy())
         self.state_history.append([getattr(d.drone_state, "value", d.drone_state)
                                    for d in self.swarm.drones])
         # 最小机间距（调试视图）
@@ -293,10 +301,16 @@ class MainWindow(QMainWindow):
         self.controller = None
         self.running = False
         self._view_tick = 0
+        self._result_dir = None        # 本次仿真结果目录（result/<alg>_<ts>/）
+        self._video = None             # FrameVideoWriter（录 GUI 交互画面）
 
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self._tick)
+        # 抓帧定时器：~10fps 抓当前 3D 视图（含用户视角旋转/缩放）写入视频
+        self._cap_timer = QTimer(self)
+        self._cap_timer.setInterval(100)
+        self._cap_timer.timeout.connect(self._capture_frame)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -496,6 +510,12 @@ class MainWindow(QMainWindow):
                 active_environment=bool(self.map_checkbox.isChecked()),
                 end_time=float(self.end_spin.value()))
             self._init_view()
+            # 每次仿真自动建结果目录 + 启动交互画面录制（同 MATLAB results 惯例）
+            self._result_dir = new_result_dir(
+                algorithm, tag=f"nb{self.nb_spin.value()}")
+            self._video = FrameVideoWriter(
+                os.path.join(self._result_dir, "swarm_simulation.mp4"), fps=10)
+            self._cap_timer.start()
             self.running = True
             self._set_at_start_widgets_enabled(False)
             self.timer.start()
@@ -503,6 +523,7 @@ class MainWindow(QMainWindow):
             self.running = False
             self.timer.stop()
             self._set_at_start_widgets_enabled(True)
+            self._finalize_run()
 
     def _current_state(self):
         if self.st_stall.isChecked():
@@ -859,8 +880,70 @@ class MainWindow(QMainWindow):
         ax.set_xlabel("time [s]"); ax.legend(fontsize=8); ax.grid(True)
         self.debug_canvas.draw_idle()
 
+    # ------------------------------------------------------------------
+    # 结果自动记录（result/<alg>_<ts>/：交互视频 + 参数图）
+    # ------------------------------------------------------------------
+    def _capture_frame(self):
+        """抓当前 3D 视图 widget 像素（含用户视角旋转/缩放）写入视频。"""
+        if self._video is None:
+            return
+        widget = self.pview if self.use_pv else self.canvas
+        if widget is None:
+            return
+        try:
+            qimg = widget.grab().toImage().convertToFormat(QImage.Format_RGB888)
+            w, h = qimg.width(), qimg.height()
+            if w <= 0 or h <= 0:
+                return
+            bpl = qimg.bytesPerLine()
+            buf = qimg.bits()                  # PySide6: memoryview（无需 setsize）
+            arr = np.frombuffer(buf, dtype=np.uint8, count=bpl * h)
+            arr = arr.reshape(h, bpl)[:, : w * 3].reshape(h, w, 3).copy()
+            self._video.add_frame(arr)
+        except Exception:                                              # noqa: BLE001
+            pass
+
+    def _finalize_run(self):
+        """仿真结束：关视频 + 存参数图到 result 目录（每次仿真自动记录）。"""
+        self._cap_timer.stop()
+        if self._video is not None:
+            self._video.close()
+            self._video = None
+        c = self.controller
+        if c is not None and self._result_dir:
+            try:
+                self._save_result_plots(c)
+            except Exception as e:                                     # noqa: BLE001
+                print(f"[result] 参数图保存失败: {e}")
+            print(f"[result] 本次仿真结果 → {self._result_dir}")
+        self._result_dir = None
+
+    def _save_result_plots(self, c):
+        """把轨迹图 + 6 性能图 + 碰撞/障碍图 + performance.npz 存到结果目录。"""
+        hist = c.pos_history
+        if len(hist) < 2:
+            return
+        pos = np.asarray(hist).transpose(0, 2, 1).reshape(len(hist), -1)   # (T,3N)
+        vel = (np.asarray(c.vel_history).transpose(0, 2, 1)
+               .reshape(len(c.vel_history), -1) if len(c.vel_history) > 1 else None)
+        n = min(len(pos), len(vel) if vel is not None else len(pos))
+        nb = c.params.p_swarm.nb_agents
+        fig = plot_trajectories(pos[:n], nb, c.swarm.get_colors(), c.params.map,
+                                save_path=os.path.join(self._result_dir, "trajectories.png"))
+        plt.close(fig)
+        if vel is not None:
+            metrics = compute_swarm_performance(pos[:n], vel[:n], c.params.p_swarm,
+                                                dirname=self._result_dir)
+            th = np.arange(n) * c.dt
+            figs = plot_performance(th, *metrics,
+                                    collisions_history=c.swarm.collisions_history[:n],
+                                    dirname=self._result_dir)
+            for f in figs.values():
+                plt.close(f)
+
     def closeEvent(self, ev):
         self.timer.stop()
+        self._finalize_run()
         super().closeEvent(ev)
 
 

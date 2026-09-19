@@ -908,6 +908,34 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 11 —— GUI 每次仿真自动记录到 result/（含交互视角视频）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（gui_result 9/9；全量 **232/232**）
+**需求**：仿真在 GUI 进行；**每次仿真自动**记录到 result/<alg>_<ts>/；视频**完整记录用户对仿真
+画面的视角旋转/缩放/平移**（录用户实际看到的 3D 交互画面，非固定视角渲染）。
+
+### 新增/修改
+
+| 文件 | 改动 |
+|---|---|
+| `visualization/video_writer.py` | 新增 `FrameVideoWriter`：numpy 帧(H,W,3)→ffmpeg rawvideo 管道→mp4（录 GUI 像素帧） |
+| `gui/desktop_app.py` | 开始仿真→`new_result_dir`+启动 10fps 抓帧定时器；`_capture_frame` 抓 3D 视图 widget（`QWidget.grab()`，pyvista/matplotlib 通用，含用户相机操作）；`_finalize_run` 停止时关视频+`_save_result_plots` 存轨迹/6性能图/碰撞/障碍/npz；`SimController.vel_history` |
+| `visualization/__init__.py` | 导出 `FrameVideoWriter` |
+| `tests/test_gui_result.py` | 9 项（FrameVideoWriter mp4 + GUI 自动记录全链路） |
+| `tests/test_gui.py` | 测试后清理其 result 目录（防回归污染） |
+
+### 修复的实现 bug
+
+- ffmpeg 参数 `-c v libx264` → `-c:v libx264`（原写法 ffmpeg 立即退出、帧写不进）。
+- PySide6 `QImage.bits()` 返回 memoryview（无 `setsize`）→ 改用 `bytesPerLine` 处理 padding 后 `np.frombuffer`。
+
+### 验证
+
+- `test_gui_result` **9/9**：开始→建 result 目录+启动录制；抓帧>0；停止→mp4 非空 + trajectories/performance/npz 齐全。
+- 全量 **232/232**。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -933,8 +961,8 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `control/true_states.py` | ✅ | 伪真值估计（z_hat 22） |
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
 | `simulation/result_dir.py` | ✅ | `new_result_dir`/`RESULT_ROOT`（result/<alg>_<ts>/，Stage 10） |
-| `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`（Stage 9） |
-| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3） |
+| `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`(含 FrameVideoWriter)（Stage 9/11） |
+| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3）+ 每次仿真自动记录 result/ + 交互视角视频（Stage 11） |
 | `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
 | `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |
 | `guidance/` | ✅ | plan_RRT + path_manager_quad/wing + path_follower_quad/wing + dubins（Stage 5/7） |

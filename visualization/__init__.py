@@ -22,7 +22,7 @@ from .drone_body import (define_body, define_quad_body, define_wing_body,
 from .drone_viewer import DroneViewer
 from .drone_state_plot import DroneStatePlotter
 from .path_drawing import draw_waypoints, draw_path, points_along_dubins_path
-from .video_writer import VideoWriterWithRate
+from .video_writer import VideoWriterWithRate, FrameVideoWriter
 
 __all__ = [
     "SwarmViewer",
@@ -31,5 +31,5 @@ __all__ = [
     "define_body", "define_quad_body", "define_wing_body", "rotate", "translate",
     "DroneViewer", "DroneStatePlotter",
     "draw_waypoints", "draw_path", "points_along_dubins_path",
-    "VideoWriterWithRate",
+    "VideoWriterWithRate", "FrameVideoWriter",
 ]
