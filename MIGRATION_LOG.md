@@ -606,9 +606,9 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
-## Stage 4 —— 真实动力学（Phase 8 物理 + Phase 9 控制-四旋翼 + 接通）【进行中】
+## Stage 4 —— 真实动力学（Phase 8 物理 + Phase 9 控制 + 接通 + §17 对照）【完成】
 
-**日期**：2026-09-19　**状态**：🟡 进行中（quadcopter 闭环已通；fixed_wing 自动驾驶仪与 §17 数值对照待补）
+**日期**：2026-09-19　**状态**：✅ 完成（quad+wing 真实动力学接通；§17 数值对照机器精度匹配，缺口B 关闭）
 
 ### Phase 8 —— physics（新增）
 
@@ -643,13 +643,22 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 - **B-17**：MATLAB `pe_ve_hold` 签名缺 p_sim 却用 p_sim.dt（潜在未定义变量）；Python 补入 p_sim 参数使其可运行，语义不变。
 - **B-18**：原版 fixed_wing 仿真最初几秒急速下坠并消失（原始团队 fixed_wing 代码不完善/严重 bug）；Python 忠实复现（2s: 50→43.3m），不修复。
 
+### §17/§18 数值对照（已完成，缺口B 关闭）
+
+- 参考数据：`matlab_ref/export_ref_swarm.m`（MATLAB 导出：无故障、rng(0)、导出 Pos0）。
+- 对照：`tests/test_matlab_ref.py` 用同一 Pos0 跑 Python 无故障仿真，逐帧比 pos/vel（§18 max/mean 绝对误差）。
+- 结果（3000 步、N=5、有障碍）：
+  - olfati_saber：pos max|err| = 0.0，vel max|err| = 8.9e-16（机器精度）
+  - vasarhelyi：pos max|err| = 0.0，vel max|err| = 0.0
+- 结论：point_mass 主线两算法与 MATLAB **机器精度一致**。
+
 ### 测试
 
-- 全量 **94/94**（含 physics 13、real_dynamics 5、gui 1）。
+- 全量 **96/96**（含 physics 13、real_dynamics 5、matlab_ref 2、gui 1）。
 
-### 待办（Stage 4 剩余）
+### 待办
 
-- §17/缺口B：MATLAB/Python 数值对照（需 MATLAB 快照或解析/trim 对照）。
+- （Stage 4 完成。后续：Stage 5 路径规划 / Phase 10 估计 / Phase 11 制导 / Phase 12 真实动力学可视化，按需。）
 
 ---
 
