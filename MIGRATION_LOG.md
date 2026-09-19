@@ -878,6 +878,36 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 10 —— 结果目录 result/（群体仿真视频 + debug 参数图集中存放）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（result_dir 9/9；全量 **223/223**）
+**需求**：用户要求在 `SwarmLab_py/result/` 下按 MATLAB 惯例（`results/results_swarm/<alg>_<ts>/`）
+集中存放群体仿真视频 + debug 参数图，便于后续挑选/对比多次运行。
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `simulation/result_dir.py` | `RESULT_ROOT`=SwarmLab_py/result；`new_result_dir(algorithm, base, tag)` 建 `<alg>_<yyyy_mm_dd_HH_MM_SS>[_tag]/` |
+| `result/README.md` | result/ 用途 + 子目录命名 + 每次运行产物清单 |
+| `examples/run_swarm_result.py` | demo：群体故障仿真 → result/<alg>_<ts>/ 存 swarm_simulation.mp4 + 三态帧 + 轨迹 + 6 性能图 + 碰撞/障碍图 + performance.npz |
+| `tests/test_result_dir.py` | 9 项（RESULT_ROOT 位置 / 命名含算法+时间戳+tag / 唯一性） |
+
+### 修改文件
+
+| 文件 | 改动 |
+|---|---|
+| `simulation/__init__.py` | 导出 `new_result_dir` / `RESULT_ROOT` |
+
+### 验证
+
+- `test_result_dir` **9/9**；全量 **223/223**。
+- demo 实跑：`result/olfati_saber_2026_09_19_21_07_27_fault30/` 生成 14 文件
+  （swarm_simulation.mp4 + frame_1/2/3 + trajectories + performance*×7 + collision_history +
+  obstacle_distance + performance.npz），碰撞=0。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -902,6 +932,7 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `math_tools/` | ✅ | Rb2i/pos2dist/compute_neighborhood/network_components/compute_swarm_performance |
 | `control/true_states.py` | ✅ | 伪真值估计（z_hat 22） |
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
+| `simulation/result_dir.py` | ✅ | `new_result_dir`/`RESULT_ROOT`（result/<alg>_<ts>/，Stage 10） |
 | `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`（Stage 9） |
 | `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3） |
 | `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
