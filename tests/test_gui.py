@@ -46,29 +46,32 @@ def test_gui_window_and_live_sim():
     rd = win._result_dir          # 自动记录的结果目录（测试后清理）
 
     # 高度保持（方案1）：h_target 设定后集群中心高度收敛到目标；h_target=0 → 贴地(无人车)
-    ctrl.end_time = 100.0          # 高度收敛需较长时间，放宽 end（默认 end_spin=2 会提前 done）
+    ctrl.end_time = 200.0          # 温和趋势收敛较慢，放宽 end（默认 end_spin=2 会提前 done）
     h0 = -float(ctrl.swarm.get_pos_ned()[2].mean())
     ctrl.h_target = h0 + 20.0
-    for _ in range(1000):
+    for _ in range(2500):
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
     h1 = -float(ctrl.swarm.get_pos_ned()[2].mean())
-    assert abs(h1 - (h0 + 20.0)) < 4.0, f"高度保持未收敛 (h={h1:.1f}, target={h0 + 20:.1f})"
-    # 鸟群感：个体高度保留高低差异（非全部锁同一高度的扁平化）
+    assert abs(h1 - (h0 + 20.0)) < 4.0, f"高度未温和接近滑杆 (h={h1:.1f}, target={h0 + 20:.1f})"
+    # 鸟群感：个体高度保留高低差异（自然涌现，非扁平）
     hs = -ctrl.swarm.get_pos_ned()[2]
     assert float(np.std(hs)) > 0.5, f"个体高度扁平化 (std={np.std(hs):.2f})，应保留鸟群高低差异"
-    # 方案C：避让后自动恢复高度 —— 注入故障避让下压后，恢复 Normal 中心应回 h_target
+    # 不极端：无个体攀升极高 / 无个体穿地贴地
+    assert hs.max() < (h0 + 20.0) + 30.0, f"个体攀升极高 (max={hs.max():.1f})"
+    assert hs.min() > 0.5, f"个体跌落到地面 (min={hs.min():.1f})"
+    # 避让后温和恢复高度：注入故障避让下压后，恢复 Normal 中心应回接近 h_target
     hT = h0 + 20.0
     ctrl.set_state("Stalled", 0.3)
     for _ in range(1000):
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
     ctrl.set_state("Normal", 0.3)
-    for _ in range(1500):
+    for _ in range(2000):
         ctrl.apply_live(180, 10, 5)
         ctrl.step()
     h_back = -float(ctrl.swarm.get_pos_ned()[2].mean())
-    assert abs(h_back - hT) < 5.0, f"避让后未自动恢复高度 (h={h_back:.1f}, target={hT:.1f})"
+    assert abs(h_back - hT) < 6.0, f"避让后未温和恢复高度 (h={h_back:.1f}, target={hT:.1f})"
     ctrl.h_target = 0.0
     for _ in range(3000):
         ctrl.apply_live(180, 10, 5)

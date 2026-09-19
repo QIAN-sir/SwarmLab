@@ -160,12 +160,12 @@ class SimController:
         if self.done:
             return False
         self.swarm.update_command(self.params.p_swarm, self.params.p_swarm.r_coll, self.dt)
-        # 方案C+（自然鸟群优先）：个体分散/离散再聚合是算法自然涌现行为（初始高度随机+自主避障+
-        #   凝聚“最大可能聚合”），**不用代码硬性保持**；默认算法 z 完全自由。
-        #   仅当集群中心偏离滑杆 h_target 超死区且非避让中时，施加**统一升降 c**（所有健康机同加，
-        #   不扣均值/不改个体相对差异）把中心拉回 H → 解决“避让后停低空”；个体分散仍由算法自然决定。
-        #   避让中（近故障机）：算法 z 完全自由 → 保留三维避障。
-        #   个体下限安全兜底：低于安全高度(地面2m/建筑顶+2m)时向上推，防撞地/撞楼。
+        # 方案D（温和趋势调节）：滑杆仅便于调节集群高度，**非硬性约束、接近即可、不钉死、不极端**；
+        #   鸟群感=算法自然涌现（初始随机+自主避障+凝聚），不用代码保持。
+        #   整体趋势：c=clamp(0.1*(H-h_center),±1) 小增益小限幅，死区(±2m)内不干预 → 集群自行升降接近H。
+        #   避让中(近故障机)：不加趋势 → 算法 z 自由（三维避障）。
+        #   温和地面排斥：个体<8m 时梯度向上(max1) 防避让压地/穿地；**不推过楼顶**(防攀升极高)，
+        #     建筑碰撞交给水平圆柱避障。
         normals = [d for d in self.swarm.drones
                    if getattr(d.drone_state, "value", d.drone_state) == "Normal"]
         if normals:
@@ -175,29 +175,22 @@ class SimController:
             avoiding = [any(np.linalg.norm(d.pos_ned - fp) < r_avoid for fp in faults)
                         for d in normals]
             h_center = float(np.mean([-d.pos_ned[2] for d in normals]))
-            dead = 2.0                                          # 死区：死区内算法完全自由
+            dead = 2.0                                          # 死区：接近H后不干预(非钉死)
             if abs(self.h_target - h_center) > dead:
-                c = max(-3.0, min(3.0, 0.5 * (self.h_target - h_center)))   # 统一升降速度
+                lim = 3.0 if self.h_target <= 0 else 1.0        # 无人车模式快速贴地; 飞行温和
+                c = max(-lim, min(lim, 0.1 * (self.h_target - h_center)))   # 温和整体趋势
             else:
                 c = 0.0
-            mp = self.params.map
-            bn = np.asarray(mp.buildings_north).ravel()
-            be = np.asarray(mp.buildings_east).ravel()
-            bh = np.asarray(mp.buildings_heights).ravel()
-            bw = getattr(mp, "building_width", 0.0) / 2.0
+            h_floor = 8.0                                       # 温和地面排斥起始高度
             for d, av in zip(normals, avoiding):
+                vz = d.command[3]                               # 算法z(自然, 含避让三维)
                 if not av and c != 0.0:
-                    # 高度调整期：统一升降 c（c>0=上升→NED z 速度取负）；保留个体自然相对差异
-                    d.command[3] = d.command[3] - c
-                # else：避让中 或 死区内 → 算法 z 完全自由（自然鸟群 + 三维避障）
+                    vz -= c                                     # 非避让: 加温和整体趋势(避让中自由)
                 h_i = -d.pos_ned[2]
-                h_safe = 0.0 if self.h_target <= 0 else 2.0
-                if self.h_target > 0 and bn.size and bw > 0:
-                    inside = (np.abs(d.pos_ned[0] - bn) <= bw) & (np.abs(d.pos_ned[1] - be) <= bw)
-                    if inside.any():
-                        h_safe = max(h_safe, float(bh[inside].max()) + 2.0)
-                if h_i < h_safe:                            # 安全兜底：向上推（覆盖）
-                    d.command[3] = -min(3.0, 1.0 * (h_safe - h_i))
+                if self.h_target > 0 and h_i < h_floor:
+                    # 温和地面排斥(防压地/穿地): 梯度向上, 不推过楼顶
+                    vz -= min(1.0, 0.3 * (h_floor - h_i))
+                d.command[3] = vz
         fad = self._fad()
         self.swarm.fad = fad
         self.swarm.update_state(self.wind, self.time, fad)
