@@ -120,22 +120,32 @@ def test_drift_initialized_reset_on_normal():
     assert d.drift_initialized is False
 
 
-def test_real_dynamics_stub():
+def test_real_dynamics_quad_active():
+    # Phase 8/9 后：quadcopter 真实动力学已接通（不再抛 NotImplementedError）
     b = build_params("quadcopter", None)
     d = Drone("quadcopter", "Normal", b.p_drone, b.p_battery, b.p_sim, b.p_physics, b.map)
+    d.set_pos(np.array([0.0, 0.0, -20.0]))
+    d.command = np.zeros(4)
+    d.update_state(np.zeros(6), 0.0, 1.0)   # 应正常运行
+    assert np.all(np.isfinite(d.pos_ned))
+    # fixed_wing 自动驾驶仪待迁移 → 仍抛 NotImplementedError
+    bw = build_params("fixed_wing", None)
+    dw = Drone("fixed_wing", "Normal", bw.p_drone, bw.p_battery, bw.p_sim, bw.p_physics, bw.map)
+    dw.set_pos(np.array([0.0, 0.0, -50.0]))
+    dw.command = np.zeros(4)
     try:
-        d.update_state(np.zeros(6), 0.0, 1.0)
+        dw.update_state(np.zeros(6), 0.0, 1.0)
         raised = False
     except NotImplementedError:
         raised = True
-    assert raised, "真实动力学分支应抛 NotImplementedError（Phase 8/9）"
+    assert raised, "fixed_wing 自动驾驶仪待迁移，应抛 NotImplementedError"
 
 
 def _run_all():
     tests = [
         test_construction, test_set_pos_vel_get_state, test_normal_update,
         test_stalled_update, test_drifting_update_and_decay,
-        test_drift_initialized_reset_on_normal, test_real_dynamics_stub,
+        test_drift_initialized_reset_on_normal, test_real_dynamics_quad_active,
     ]
     passed = failed = 0
     for t in tests:

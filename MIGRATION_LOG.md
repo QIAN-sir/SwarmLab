@@ -606,6 +606,52 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 4 —— 真实动力学（Phase 8 物理 + Phase 9 控制-四旋翼 + 接通）【进行中】
+
+**日期**：2026-09-19　**状态**：🟡 进行中（quadcopter 闭环已通；fixed_wing 自动驾驶仪与 §17 数值对照待补）
+
+### Phase 8 —— physics（新增）
+
+| 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `physics/__init__.py` | — | 导出 |
+| `physics/forces_moments.py` | forces_moments_quad.m / _wing.m | 机体系力/力矩，out(12)=[F;M;Va;alpha;beta;wn;we;wd] |
+| `physics/kinematics.py` | kinematics_ode_fun.m | 刚体 12 维导数（orientation 冻结=步初，供 solve_ivp/RK23≈ode23） |
+| `tests/test_physics.py` | — | 13 项解析对照（悬停平衡 F=M=0、力矩符号、翼升力、刚体导数 vs Rb2i） |
+
+### Phase 9 —— control（四旋翼，新增）
+
+| 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `control/pid.py` | pid_loop.m | PID 回路 + 对称/非对称饱和；param 字典存 Drone.P_* |
+| `control/autopilot_quad.py` | autopilot_quad.m | 4 版本 + hold 函数 + mixer；y=[delta(4);x_command(19)] |
+| `control/__init__.py`（改） | — | 导出 pid_loop/autopilot_quad/mixer |
+| `tests/test_real_dynamics.py` | — | 5 项闭环（悬停保持/北向响应/delta 限幅/fixed_wing 待迁移） |
+
+### 接通 Drone 真实动力学（core/drone.py 改）
+
+- `update_state` 真实分支：autopilot_quad → delta/full_command → compute_dynamics →
+  compute_kinematics(RK23) → update_battery；point_mass 分支逻辑不变（改为 else）。
+- `compute_dynamics`：forces_moments_quad/wing → forces/moments/airdata。
+- `compute_kinematics`：solve_ivp(RK23, rtol=atol=1e-8) 积分 kinematics_ode_fun（orientation 冻结）。
+- fixed_wing 暂抛 NotImplementedError（autopilot_wing 待迁移）。
+- `tests/test_drone.py`：`test_real_dynamics_stub` → `test_real_dynamics_quad_active`。
+
+### 记录的新潜在 bug
+
+- **B-17**：MATLAB `pe_ve_hold` 签名缺 p_sim 却用 p_sim.dt（潜在未定义变量）；Python 补入 p_sim 参数使其可运行，语义不变。
+
+### 测试
+
+- 全量 **94/94**（含 physics 13、real_dynamics 5、gui 1）。
+
+### 待办（Stage 4 剩余）
+
+- Phase 9：autopilot_wing（固定翼）→ 接通 fixed_wing。
+- §17/缺口B：MATLAB/Python 数值对照（需 MATLAB 快照或解析/trim 对照）。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的

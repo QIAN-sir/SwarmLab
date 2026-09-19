@@ -28,6 +28,10 @@ import numpy as np
 
 from ..enums import DroneType, DroneState
 from ..control.true_states import true_states
+from scipy.integrate import solve_ivp
+
+from ..physics import (forces_moments_quad, forces_moments_wing, kinematics_ode_fun)
+from ..control.autopilot_quad import autopilot_quad
 
 
 def _jet(n: int) -> np.ndarray:
@@ -228,37 +232,42 @@ class Drone:
 
         if self.drone_type != DroneType.POINT_MASS:
             # ---- 真实动力学分支（quadcopter / fixed_wing）----
-            # MATLAB 原逻辑:
-            #   temp3 = autopilot_wing(self,0,time) / autopilot_quad(self,time)
+            # MATLAB: temp3 = autopilot_quad(self,time) / autopilot_wing(self,0,time)
             #   self.delta = temp3(1:4); self.full_command = temp3(5:end)
-            #   self.compute_dynamics(wind,time); self.compute_kinematics(time); self.update_battery()
-            raise NotImplementedError(
-                "真实动力学分支(quadcopter/fixed_wing)依赖 autopilot/physics/control，"
-                "见 Phase 8/9（当前仅 point_mass 主线可用）")
+            #   compute_dynamics → compute_kinematics → update_battery
+            if self.drone_type == DroneType.QUADCOPTER:
+                temp = autopilot_quad(self, time)
+            else:
+                raise NotImplementedError("fixed_wing 自动驾驶仪(autopilot_wing)待迁移")
+            self.delta = temp[0:4].copy()
+            self.full_command = temp[4:].copy()
+            self.compute_dynamics(wind, time)
+            self.compute_kinematics(time)
+            self.update_battery()
+        else:
+            # ---- point_mass 故障状态机（二次开发核心）----
+            # 先判断是否进入了失控漂移状态
+            if self.drone_state != DroneState.DRIFTING:
+                self.drift_initialized = False
 
-        # ---- point_mass 故障状态机（二次开发核心）----
-        # 先判断是否进入了失控漂移状态
-        if self.drone_state != DroneState.DRIFTING:
-            self.drift_initialized = False
-
-        if self.drone_state == DroneState.NORMAL:
-            self.vel_xyz = self.command[1:4].copy()          # command(2:4)
-            self.pos_ned = self.pos_ned + self.vel_xyz * self.p_sim.dt
-            self.attitude[2] = self.command[0]               # command(1) → psi（用于绘图）
-        elif self.drone_state == DroneState.STALLED:
-            self.vel_xyz = np.zeros(3)
-            self.pos_ned = self.pos_ned + self.vel_xyz * self.p_sim.dt   # 位置不变
-            self.attitude[2] = self.command[0]
-        elif self.drone_state == DroneState.DRIFTING:
-            # self.vel_xyz = fad * self.command(2:4);  # ← MATLAB 中被注释的备选方案
-            # 记录失控漂移前的速度（仅首次进入 Drifting 时）
-            if not self.drift_initialized:
-                self.drift_initialized = True
-                self.drift_vel = self.vel_xyz_history[-1, :].copy()   # vel_xyz_history(end,:)'
-            # 根据衰减因子不断更新速度和位置
-            self.vel_xyz = fad * self.drift_vel
-            self.pos_ned = self.pos_ned + self.vel_xyz * self.p_sim.dt
-            self.attitude[2] = self.command[0]
+            if self.drone_state == DroneState.NORMAL:
+                self.vel_xyz = self.command[1:4].copy()          # command(2:4)
+                self.pos_ned = self.pos_ned + self.vel_xyz * self.p_sim.dt
+                self.attitude[2] = self.command[0]               # command(1) → psi（用于绘图）
+            elif self.drone_state == DroneState.STALLED:
+                self.vel_xyz = np.zeros(3)
+                self.pos_ned = self.pos_ned + self.vel_xyz * self.p_sim.dt   # 位置不变
+                self.attitude[2] = self.command[0]
+            elif self.drone_state == DroneState.DRIFTING:
+                # self.vel_xyz = fad * self.command(2:4);  # ← MATLAB 中被注释的备选方案
+                # 记录失控漂移前的速度（仅首次进入 Drifting 时）
+                if not self.drift_initialized:
+                    self.drift_initialized = True
+                    self.drift_vel = self.vel_xyz_history[-1, :].copy()   # vel_xyz_history(end,:)'
+                # 根据衰减因子不断更新速度和位置
+                self.vel_xyz = fad * self.drift_vel
+                self.pos_ned = self.pos_ned + self.vel_xyz * self.p_sim.dt
+                self.attitude[2] = self.command[0]
 
         # 更新历史
         self._append_pos_history()
@@ -366,12 +375,32 @@ class Drone:
     # 私有：动力学 / 运动学 / 传感 / 估计
     # ==================================================================
     def compute_dynamics(self, wind, time) -> None:
-        """COMPUTE_DYNAMICS: 由当前状态计算受力/力矩（forces_moments_*）。见 Phase 8。"""
-        raise NotImplementedError("compute_dynamics 依赖 forces_moments_quad/wing，见 Phase 8")
+        """COMPUTE_DYNAMICS: 由当前状态计算受力/力矩（forces_moments_*）。Phase 8。"""
+        wind = np.asarray(wind, dtype=float)
+        if self.drone_type == DroneType.QUADCOPTER:
+            out = forces_moments_quad(self.get_state(), self.delta, wind,
+                                      self.p_drone, self.p_sim, self.p_physics)
+        elif self.drone_type == DroneType.FIXED_WING:
+            out = forces_moments_wing(self.get_state(), self.delta, wind,
+                                      self.p_drone, self.p_physics)
+        else:
+            raise NotImplementedError("point_mass 无真实动力学")
+        self.forces = out[0:3].copy()
+        self.moments = out[3:6].copy()
+        self.airdata = out[6:12].copy()   # [Va, alpha, beta, wn, we, wd]
 
     def compute_kinematics(self, time) -> None:
-        """COMPUTE_KINEMATICS: 由力/力矩积分出新状态（ode23/kinematics_ode_fun）。见 Phase 8。"""
-        raise NotImplementedError("compute_kinematics 依赖 kinematics_ode_fun/ode23，见 Phase 8")
+        """COMPUTE_KINEMATICS: 由力/力矩积分出新状态（ode23≈RK23 / kinematics_ode_fun）。Phase 8。"""
+        uu = np.concatenate([self.forces, self.moments])
+        x0 = self.get_state()
+        sol = solve_ivp(lambda t, x: kinematics_ode_fun(t, x, x0, uu, self.p_drone),
+                        (0.0, self.p_sim.dt), x0, method="RK23",
+                        rtol=1e-8, atol=1e-8)
+        xnew = sol.y[:, -1]
+        self.pos_ned = xnew[0:3].copy()
+        self.vel_xyz = xnew[3:6].copy()
+        self.attitude = xnew[6:9].copy()
+        self.rates = xnew[9:12].copy()
 
     def update_sensor_measurements(self) -> None:
         """UPDATE_SENSOR_MEASUREMENTS: 更新传感器测量（仅 use_estimation=True 时）。"""
