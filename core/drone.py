@@ -33,6 +33,9 @@ from scipy.integrate import solve_ivp
 from ..physics import (forces_moments_quad, forces_moments_wing, kinematics_ode_fun)
 from ..control.autopilot_quad import autopilot_quad
 from ..control.autopilot_wing import autopilot_wing
+from ..guidance.path_planner import plan_RRT
+from ..guidance.path_manager import path_manager_quad, new_pm_state
+from ..guidance.path_follower import path_follower_quad
 
 
 def _jet(n: int) -> np.ndarray:
@@ -156,6 +159,7 @@ class Drone:
         self.path = np.zeros(26)
         self.nb_waypoints = None
         self.waypoints = None
+        self.pm_state = None          # path_manager persistent 状态（计划 §10）
         self.transition_time = None
         self.alpha = 0.0
         self.command_before_transition = None
@@ -354,16 +358,65 @@ class Drone:
     # 路径规划/管理/跟踪（桩化，Phase 11）
     # ==================================================================
     def plan_path(self, path_type, time) -> None:
-        """PLAN_PATH: 生成航点（@Drone/plan_path.m）。见 Phase 11。"""
-        raise NotImplementedError("plan_path 依赖 RRT/path planning，见 Phase 11")
+        """PLAN_PATH（@Drone/plan_path.m）。fillet/dubins 硬编码航点；straight_line_rrt→plan_RRT；
+        city_dubins / 5 → plan_RRT_dubins / plan_cover_RRT_dubins（MATLAB 缺失，B-10）抛 NotImplementedError。
+        """
+        flag_new_waypoints = self.path[-1]
+        p_drone = self.p_drone
+        pn, pe = self.z_hat[0], self.z_hat[1]
+        h = self.z_hat[2]
+        chi = self.z_hat[8]
+        nb_wpts = self.nb_waypoints or 0
+        if (time == 0) or flag_new_waypoints:
+            if path_type == "fillet":
+                nb_wpts = 4
+                scale = 10
+                wpts = np.array([[0, 0, -10], [300, 0, -10], [0, 300, -10], [300, 300, -10]], float)
+                wpts_info = np.tile([-9999.0, p_drone.Va0], (4, 1))
+                wpt_list = np.hstack([scale * wpts, wpts_info])
+            elif path_type == "dubins":
+                nb_wpts = 5
+                scale = 10
+                wpts = np.array([[0, 0, -7], [100, 0, -7], [100, 150, -7],
+                                 [200, 150, -7], [200, 400, -7]], float)
+                wpts_info = np.array([[0, p_drone.Va0], [45 * np.pi / 180, p_drone.Va0],
+                                      [0, p_drone.Va0], [45 * np.pi / 180, p_drone.Va0],
+                                      [0, p_drone.Va0]])
+                wpt_list = np.hstack([scale * wpts, wpts_info])
+            elif path_type == "city_dubins":
+                raise NotImplementedError("plan_RRT_dubins 在 MATLAB 中缺失（B-10）")
+            elif path_type == "straight_line_rrt":
+                w = self.map.width
+                wpt_start = [pn, pe, -h, chi, p_drone.Va0]
+                wpt_end = [w, w, -h, 0, p_drone.Va0]
+                waypoints = plan_RRT(wpt_start, wpt_end, self.map)
+                nb_wpts = waypoints.shape[0]
+                wpt_list = np.column_stack([waypoints[:, 0:4], np.full(nb_wpts, p_drone.Va0)])
+            elif path_type == 5:
+                raise NotImplementedError("plan_cover_RRT_dubins 在 MATLAB 中缺失（B-10）")
+            else:
+                raise ValueError(f"未知 path_type: {path_type}")
+            fill = np.tile([-9999.0] * 5, (p_drone.size_waypoint_array - nb_wpts, 1))
+            wpt_list = np.vstack([wpt_list, fill])
+            self.nb_waypoints = nb_wpts
+            self.waypoints = wpt_list.flatten()
 
     def manage_path(self, time) -> None:
-        """MANAGE_PATH: 由航点提取路径（path_manager_wing/quad）。见 Phase 11。"""
-        raise NotImplementedError("manage_path 依赖 path_manager_*，见 Phase 11")
+        """MANAGE_PATH（Drone.m manage_path）。quad/point_mass→path_manager_quad；wing 待迁移。"""
+        size = self.p_drone.size_wpt_array
+        wv = np.zeros(5 * size) if self.waypoints is None else np.asarray(self.waypoints, float).ravel()
+        in_ = np.concatenate([[self.nb_waypoints or 0], wv, self.z_hat, [time]])
+        if self.drone_type == DroneType.FIXED_WING:
+            raise NotImplementedError("path_manager_wing 待迁移")
+        if self.pm_state is None:
+            self.pm_state = new_pm_state()
+        self.path = path_manager_quad(in_, self.p_drone, self.p_sim, self.pm_state)
 
     def follow_path(self) -> None:
-        """FOLLOW_PATH: 由路径生成指令（path_follower_wing/quad）。见 Phase 11。"""
-        raise NotImplementedError("follow_path 依赖 path_follower_*，见 Phase 11")
+        """FOLLOW_PATH（Drone.m follow_path）。quad/point_mass→path_follower_quad；wing 待迁移。"""
+        if self.drone_type == DroneType.FIXED_WING:
+            raise NotImplementedError("path_follower_wing 待迁移")
+        self.command = path_follower_quad(self.path, self.p_drone)
 
     # ==================================================================
     # 可视化（桩化，Phase 12）

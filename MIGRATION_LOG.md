@@ -662,6 +662,42 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 5 —— 路径规划（Phase 11：RRT + path_manager + path_follower + 接通）【完成】
+
+**日期**：2026-09-19　**状态**：✅ 完成（quad/point_mass 路径链路接通；wing 路径管理/跟踪按需待补）
+
+### 新增文件
+
+| 文件 | 对应 MATLAB | 说明 |
+|---|---|---|
+| `guidance/__init__.py` | — | 导出 |
+| `guidance/path_planner.py` | plan_RRT.m | RRT + 子函数（generate_random_node/collision/points_along_path/down_at_NE/extend_tree/find_minimum_path/smooth_path）；plot_map 未迁移（Phase 12） |
+| `guidance/path_manager.py` | path_manager_quad.m | path_manager_quad + fillet 圆角过渡；persistent→状态字典（Drone.pm_state，计划 §10） |
+| `guidance/path_follower.py` | path_follower_quad.m | 路径跟踪→速度指令 [psi_c;vn_c;ve_c;vd_c] |
+| `tests/test_guidance.py` | — | 14 项（RRT 无碰撞/起终点、manager nb=0/fillet、follower、Drone 链路） |
+
+### 接通 Drone（core/drone.py 改）
+
+- `plan_path`：fillet/dubins 硬编码航点；straight_line_rrt→plan_RRT；city_dubins / 5 → NotImplementedError（plan_RRT_dubins/plan_cover_RRT_dubins 缺失，B-10）。
+- `manage_path`：quad/point_mass→path_manager_quad（pm_state 持久状态）；wing 待迁移。
+- `follow_path`：quad/point_mass→path_follower_quad；wing 待迁移。
+- 新增 `Drone.pm_state`（path_manager persistent 状态）。
+
+### 记录的新潜在 bug / 忠实保留
+
+- **B-19**：find_minimum_path 回溯跳过第一级父节点（MATLAB 原逻辑），忠实保留。
+- path_follower_quad 的 `psi_c = chi_c`（MATLAB 注释“不准确”，忠实保留）。
+
+### 测试
+
+- 全量 **110/110**（含 guidance 14）。
+
+### 待办
+
+- wing 路径管理/跟踪（path_manager_wing / path_follower_wing）按需。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
