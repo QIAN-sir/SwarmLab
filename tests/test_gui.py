@@ -9,6 +9,8 @@ import os
 import shutil
 import sys
 
+import numpy as np
+
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
@@ -52,6 +54,9 @@ def test_gui_window_and_live_sim():
         ctrl.step()
     h1 = -float(ctrl.swarm.get_pos_ned()[2].mean())
     assert abs(h1 - (h0 + 20.0)) < 3.0, f"高度保持未收敛 (h={h1:.1f}, target={h0 + 20:.1f})"
+    # 鸟群感：个体高度保留高低差异（非全部锁同一高度的扁平化）
+    hs = -ctrl.swarm.get_pos_ned()[2]
+    assert float(np.std(hs)) > 0.5, f"个体高度扁平化 (std={np.std(hs):.2f})，应保留鸟群高低差异"
     ctrl.h_target = 0.0
     for _ in range(3000):
         ctrl.apply_live(180, 10, 5)

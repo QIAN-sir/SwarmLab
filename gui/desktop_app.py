@@ -160,15 +160,33 @@ class SimController:
         if self.done:
             return False
         self.swarm.update_command(self.params.p_swarm, self.params.p_swarm.r_coll, self.dt)
-        # 高度保持（方案1：高度锁H + 纯水平避让）：健康机 z 速度 = 向 h_target 收敛，
-        # 覆盖算法 z 分量（避让/凝聚的 z 力丢弃 → 避让纯水平，天然不撞地/撞楼）。
-        # h_target=0 → 贴地行驶（无人车模式）；z 完全由本高度保持控制。
-        for d in self.swarm.drones:
-            if getattr(d.drone_state, "value", d.drone_state) == "Normal":
+        # 中心高度保持 + 保留个体 z 分散（鸟群感）+ 个体下限安全保护（防撞地/楼顶）：
+        #   个体 z 速度 = (算法z_i - 均值) + 中心升降c → 中心收敛到 h_target，个体保留高低差异（不一团扁平）；
+        #   个体低于安全高度(地面2m / 建筑顶+2m)时向上推，防避让下压撞地/撞楼。
+        #   h_target=0 → 中心贴地(无人车)，不启用下限保护(地面即z=0，水平靠圆柱避障防楼)。
+        normals = [d for d in self.swarm.drones
+                   if getattr(d.drone_state, "value", d.drone_state) == "Normal"]
+        if normals:
+            algz = np.array([d.command[3] for d in normals])
+            mean_algz = float(algz.mean())
+            h_center = float(np.mean([-d.pos_ned[2] for d in normals]))
+            c = max(-3.0, min(3.0, 0.5 * (self.h_target - h_center)))   # 中心升降速度
+            mp = self.params.map
+            bn = np.asarray(mp.buildings_north).ravel()
+            be = np.asarray(mp.buildings_east).ravel()
+            bh = np.asarray(mp.buildings_heights).ravel()
+            bw = getattr(mp, "building_width", 0.0) / 2.0
+            for d in normals:
                 h_i = -d.pos_ned[2]
-                vz = 0.5 * (self.h_target - h_i)      # 比例控制向目标高度
-                vz = max(-3.0, min(3.0, vz))          # 限垂直速度防过冲
-                d.command[3] = -vz                    # NED z 向下正；上升(vz>0)→z速度负
+                vz_i = (d.command[3] - mean_algz) + c      # 个体分散 + 中心升降
+                h_safe = 0.0 if self.h_target <= 0 else 2.0
+                if self.h_target > 0 and bn.size and bw > 0:
+                    inside = (np.abs(d.pos_ned[0] - bn) <= bw) & (np.abs(d.pos_ned[1] - be) <= bw)
+                    if inside.any():
+                        h_safe = max(h_safe, float(bh[inside].max()) + 2.0)
+                if h_i < h_safe:                            # 个体下限保护：向上推
+                    vz_i = max(vz_i, min(3.0, 1.0 * (h_safe - h_i)))
+                d.command[3] = -vz_i                      # NED z 向下正
         fad = self._fad()
         self.swarm.fad = fad
         self.swarm.update_state(self.wind, self.time, fad)
