@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
         if self.use_pv:
             self.pview = QtInteractor(parent=view)
             vv.addWidget(self.pview, stretch=3)
-            self.pview.set_background("#e8f0f8")   # 淡蓝天空背景，与地面区分
+            self.pview.set_background("#EEF5FB")   # 淡蓝天空背景，与地面区分#e8f0f8
             # 地形交互风格：自由旋转时锁定世界 Z 为 up，地面保持水平（类似 matplotlib 3D），不滚转斜置
             self.pview.enable_terrain_style()
             self.fig = None
