@@ -970,6 +970,43 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 13 —— 建筑物三维高度感知避障（高空飞越 + 高空禁向下）【完成】
+
+**日期**：2026-09-23　**状态**：✅ 完成（building_height 18/18；全量 **249/249**）
+**需求**：无人机已高于建筑物顶部时仍按低空逻辑绕行（圆柱避障仅 2D 水平、无 z 判断）→
+增加三维高度感知：高空不绕行可直接飞越；高空避让失效无人机时禁止向下进入建筑物高度区域
+（约束可行方向空间，非硬编码固定方向）；低空保持原有避障基准；逐架 UAV 自身高度判断（非集群统一）。
+
+### 新增/修改
+
+| 文件 | 改动 |
+|---|---|
+| `swarm/height_constraint.py`（新） | `building_top_under_uav`(逐建筑物 footprint 内最大顶部高度) / `is_above_buildings` / `limit_downward_vel_z`(高空禁向下=约束可行方向空间)；常量 BUILDING_CLEARANCE=2m, DOWN_HORIZON=5s；受 `height_aware_cyl` 开关 gated |
+| `parameters/swarm.py` | `p_swarm.cyl_heights`(逐圆柱对应建筑物高度, 索引与 cylinders 一致) + `height_aware_cyl`(默认True新行为; False还原MATLAB原2D行为供§17对照) |
+| `swarm/vasarhelyi.py` | cyl 循环加逐建筑物高空跳过(`h_uav > cyl_h[obs]+CLEARANCE → continue`)；末尾 `limit_downward_vel_z` clip vel_z 向下 |
+| `swarm/olfati_saber.py` | 同（内部 z 已 flip，高度=`pos[2]`；clip 在翻回 NED 后） |
+| `gui/desktop_app.py` | 方案E 向下趋势后应用 `limit_downward_vel_z`（冲突协调：中心高度控制不得使高空 UAV 进入建筑高度） |
+| `tests/test_building_height.py`（新） | 18 项（4 场景 + helper 逐建筑物/多建筑不同高度） |
+| `tests/test_matlab_ref.py` | 设 `height_aware_cyl=False` 还原 MATLAB 原行为对照（Stage 13 为有意偏离） |
+
+### 关键设计
+
+- **逐建筑物判断**：cyl 索引 i ↔ `cyl_heights[i]`（build_swarm_params 由 map.buildings_* 生成，索引一致）；
+  水平 footprint 内（水平距<r_obs）且 `h_uav > h_bld+2m` → 该建筑不构成障碍。不同建筑不同高度各自判断。
+- **禁止向下=约束可行方向空间**：仅 clip vel_z(NED 向下正) 的向下量 <= (h_uav-h_top-2)/5s；
+  水平/向上分量完全不受影响、仍由原算法随相对位置/速度/目标自行计算 → 无硬编码固定方向。
+- **低空基准不变**：`h_uav <= h_top+2` 时不跳过避障、不 clip（原有低空避障逻辑原样）。
+- **与方案E 冲突协调**：中心高度控制的向下趋势在 GUI step 末尾被 `limit_downward_vel_z` 约束，
+  高空 UAV 不会因中心控制向下进入建筑物高度区域。
+
+### 验证
+
+- `test_building_height` 18/18：S1 全体高于(飞越无绕行+失效避让禁向下) / S2 全体低于(原有避障正常) /
+  S3 高低混合(逐架判断) / S4 高空失效(避让+禁向下+方向随相对位置非硬编码) / helper 逐建筑物+多建筑。
+- 全量 **249/249**（test_matlab_ref 关 height_aware 还原原行为仍机器精度）。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -990,7 +1027,8 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 | `parameters/` | ✅ | dataclass + 工厂 + `ParamsBundle` |
 | `core/drone.py` | ✅ point_mass | 真实动力学/路径/绘图方法为桩 |
 | `core/swarm.py` | ✅ | 管理 + 故障注入 + 指令分派 + 历史 |
-| `swarm/{olfati_saber,vasarhelyi}.py` | ✅ | 含内联子函数 |
+| `swarm/{olfati_saber,vasarhelyi}.py` | ✅ | 含内联子函数 + 三维高度感知避障（Stage 13） |
+| `swarm/height_constraint.py` | ✅ | 建筑物高度感知+高空禁向下（Stage 13） |
 | `math_tools/` | ✅ | Rb2i/pos2dist/compute_neighborhood/network_components/compute_swarm_performance |
 | `control/true_states.py` | ✅ | 伪真值估计（z_hat 22） |
 | `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |

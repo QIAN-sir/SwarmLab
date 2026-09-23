@@ -24,6 +24,8 @@ Ref: Vasarhelyi, Science Robotics, 2018（+ 本项目新增的凝聚项与故障
 
 import numpy as np
 
+from .height_constraint import BUILDING_CLEARANCE, limit_downward_vel_z
+
 
 def get_v_max(v_fric, r, a, p):
     """制动曲线允许的最大相对速度（对应 MATLAB 同文件末尾的 get_v_max）。
@@ -177,7 +179,14 @@ def compute_vel_vasarhelyi(swarm, p_swarm, r_agent, dt):
 
         # 圆柱形障碍物（仅 x-y 平面）
         if p_swarm.is_active_cyl:
+            h_uav = -pos[2, agent]                      # UAV 高度（NED down 正）
+            cyl_h = getattr(p_swarm, "cyl_heights", None)
+            h_aware = getattr(p_swarm, "height_aware_cyl", True)
             for obs in range(p_swarm.n_cyl):
+                # Stage 13 逐建筑物高度感知：UAV 明显高于该建筑顶部 → 不构成障碍，跳过绕行
+                if (h_aware and cyl_h is not None and obs < len(cyl_h)
+                        and h_uav > cyl_h[obs] + BUILDING_CLEARANCE):
+                    continue
                 c_obs = p_swarm.cylinders[0:2, obs]
                 r_obs = p_swarm.cylinders[2, obs]
                 dist_ab = np.sqrt(np.sum((pos[0:2, agent] - c_obs) ** 2)) - r_obs
@@ -237,5 +246,10 @@ def compute_vel_vasarhelyi(swarm, p_swarm, r_agent, dt):
         if np.sum(idx_to_bound) > 0:
             vel_command[:, idx_to_bound] = vel[:, idx_to_bound] + \
                 dt * p_swarm.max_a * accel_cmd[:, idx_to_bound] / accel_cmd_norm[idx_to_bound]
+
+    # Stage 13：高空 UAV 禁止向下进入建筑物高度区域（约束可行方向空间，非指定固定方向）；
+    # 低空 UAV 不约束（原有低空避障基准）。仅 clip 向下分量，水平/向上仍由算法自行计算。
+    for agent in range(nb_agents):
+        vel_command[2, agent] = limit_downward_vel_z(pos[:, agent], vel_command[2, agent], p_swarm)
 
     return vel_command, collisions

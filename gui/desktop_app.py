@@ -47,6 +47,7 @@ from matplotlib.figure import Figure                                   # noqa: E
 import matplotlib.pyplot as plt                                       # noqa: E402
 
 from SwarmLab_py.core import Swarm                                     # noqa: E402
+from SwarmLab_py.swarm.height_constraint import limit_downward_vel_z  # noqa: E402
 from SwarmLab_py.enums import DroneState                               # noqa: E402
 from SwarmLab_py.parameters import build_params                        # noqa: E402
 from SwarmLab_py.visualization.map_drawing import (                    # noqa: E402
@@ -209,6 +210,9 @@ class SimController:
                 vz_s += max(-a_z * self.dt, min(a_z * self.dt, vz_t - vz_s))
                 self._vz_smooth[i] = vz_s
                 d.command[3] = vz_s
+                # Stage 13 冲突协调：方案E 的向下趋势不得使高空 UAV 进入建筑物高度区域；
+                # 高空 UAV 的向下分量被 limit_downward_vel_z 约束（水平/向上仍自由）。
+                d.command[3] = limit_downward_vel_z(d.pos_ned, d.command[3], self.params.p_swarm)
         fad = self._fad()
         self.swarm.fad = fad
         self.swarm.update_state(self.wind, self.time, fad)

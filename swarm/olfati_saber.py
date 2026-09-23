@@ -26,6 +26,8 @@ import math
 
 import numpy as np
 
+from .height_constraint import BUILDING_CLEARANCE, limit_downward_vel_z
+
 
 # ===========================================================================
 # 子函数（对应 MATLAB 同文件末尾的 subfunctions）
@@ -241,7 +243,14 @@ def compute_vel_olfati_saber(swarm, p_swarm, r_agent, dt):
                         + p_swarm.c_vm_obs * (vel_obs - vel_agent)
 
         if p_swarm.is_active_cyl:
+            h_uav = pos[2, agent]                       # UAV 高度（olfati 内部 z 已 flip 向上正）
+            cyl_h = getattr(p_swarm, "cyl_heights", None)
+            h_aware = getattr(p_swarm, "height_aware_cyl", True)
             for obs in range(p_swarm.n_cyl):
+                # Stage 13 逐建筑物高度感知：UAV 明显高于该建筑顶部 → 不构成障碍，跳过绕行
+                if (h_aware and cyl_h is not None and obs < len(cyl_h)
+                        and h_uav > cyl_h[obs] + BUILDING_CLEARANCE):
+                    continue
                 c_obs = p_swarm.cylinders[0:2, obs]
                 r_obs = p_swarm.cylinders[2, obs]
                 pos_agent = pos[0:2, agent]
@@ -292,5 +301,12 @@ def compute_vel_olfati_saber(swarm, p_swarm, r_agent, dt):
 
     # ---- 翻回 NED（z 取反）----
     vel_command = np.vstack([vel_command[0:2, :], -vel_command[2:3, :]])
+
+    # Stage 13：高空 UAV 禁止向下进入建筑物高度区域（约束可行方向空间，非指定固定方向）；
+    # 低空 UAV 不约束（原有低空避障基准）。仅 clip 向下分量，水平/向上仍由算法自行计算。
+    # （olfati 内部 pos z 向上正 → NED pd = -pos[2]）
+    for agent in range(nb_agents):
+        pos_ned = np.array([pos[0, agent], pos[1, agent], -pos[2, agent]])
+        vel_command[2, agent] = limit_downward_vel_z(pos_ned, vel_command[2, agent], p_swarm)
 
     return vel_command, collisions

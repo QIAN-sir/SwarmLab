@@ -66,6 +66,11 @@ class SwarmParams:
     # ---- 圆柱障碍物（由 map 建筑生成，见工厂）----
     cylinders: np.ndarray = field(default_factory=lambda: np.zeros((3, 0)))
     n_cyl: int = 0
+    # 每圆柱对应建筑物高度 [m]（逐建筑物高度感知，Stage 13；索引与 cylinders 一致）
+    cyl_heights: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    # Stage 13 三维高度感知开关：True=高空不绕行+禁向下进入建筑高度（新行为）；
+    # False=还原 MATLAB 原 2D 避障行为（供 §17 MATLAB 对照测试）
+    height_aware_cyl: bool = True
 
     # ---- 参考值 ----
     d_ref: float = 25.0                 # 无人机间期望距离
@@ -179,10 +184,13 @@ def build_swarm_params(algorithm, map_params=None, seed=None, **overrides):
             cylinder_radius = map_params.building_width / 2.0 * math.sqrt(2.0)
         p.cylinders = np.vstack([bn, be, np.full(nb_obstacles, cylinder_radius)])  # (3, nb)
         p.n_cyl = nb_obstacles
+        # 逐圆柱对应建筑物高度（bn/be 由 buildings_north/east ravel，索引与 heights 一致）
+        p.cyl_heights = np.asarray(map_params.buildings_heights, dtype=float).ravel()
     else:
         # MATLAB: p_swarm.cylinders = 0; p_swarm.n_cyl = 0;（无环境）
         p.cylinders = np.zeros((3, 0))
         p.n_cyl = 0
+        p.cyl_heights = np.zeros(0)
 
     # ---- 初始位置/速度（param_swarm.m: rng('shuffle'); Pos0=P0+P*rand(3,N)）----
     rng = np.random.default_rng(seed)

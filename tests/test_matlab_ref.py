@@ -45,6 +45,8 @@ def _compare(alg):
 
     sim = Simulation(drone_type="point_mass", algorithm=alg, nb_agents=N,
                      active_environment=True, end_time=T * dt)
+    # Stage 13 高度感知为有意偏离 MATLAB 原行为；对照测试关闭它以还原原 2D 避障行为验证迁移忠实
+    sim.p_swarm.height_aware_cyl = False
     # 用 MATLAB 的 Pos0 覆盖；重置历史使 row0 = Pos0（消除构造时自带 set_pos 的额外行）
     for d in sim.swarm.drones:
         d.pos_ned_history = np.zeros((0, 3))
