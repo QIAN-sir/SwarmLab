@@ -84,6 +84,20 @@ _STATE_COLOR = {"Normal": "#1f77b4", "Stalled": "#ff7f0e", "Drifting": "#d62728"
 DRONE_MARKER_SIZE = 1
 # ======================================================================
 
+# ======================================================================
+# 集群垂直高度控制参数（方案E 平滑垂直控制）——★ 后续微调升降速度/平滑度改这里 ★
+# ======================================================================
+VZ_GAIN = 0.15            # 中心高度趋势比例增益: c_t = VZ_GAIN*(H - h_center)（越大接近越快）
+VZ_MAX_FLY = 2.0          # 飞行模式垂直升降速度上限 [m/s]（越大升降越快）
+VZ_MAX_GROUND = 3.0       # 无人车模式(H=0)贴地速度上限 [m/s]
+VZ_RAMP_ACCEL = 1.0       # 趋势平滑加速度 [m/s²]（c_smooth 渐变率；越大起步/停止越干脆）
+VZ_SMOOTH_ACCEL = 3.0     # 每机垂直速度平滑加速度 [m/s²]（消除跳变/振荡；越小越柔）
+VZ_DEADBAND = 2.0         # 中心高度死区 [m]（|H-h_center|<=死区 不干预，保留自然鸟群）
+FLOOR_REPEL_HEIGHT = 8.0  # 地面排斥起始高度 [m]（个体低于此高度受向上排斥，防压地/穿地）
+FLOOR_REPEL_GAIN = 0.3    # 地面排斥梯度增益（越大低空上推越强）
+FLOOR_REPEL_MAX = 1.0     # 地面排斥速度上限 [m/s]
+# ======================================================================
+
 
 def _marker_geoms(s):
     """三种状态的世界单位 glyph 几何（统一尺寸 s）：球体 / 正方体 / 三棱锥。
@@ -187,27 +201,26 @@ class SimController:
             avoiding = [any(np.linalg.norm(d.pos_ned - fp) < r_avoid for fp in faults)
                         for d in normals]
             h_center = float(np.mean([-d.pos_ned[2] for d in normals]))
-            dead = 2.0                                          # 死区：接近H后不干预(非钉死)
-            if abs(self.h_target - h_center) > dead:
-                lim = 3.0 if self.h_target <= 0 else 1.0        # 无人车模式快速贴地; 飞行温和
-                c_t = max(-lim, min(lim, 0.1 * (self.h_target - h_center)))
+            if abs(self.h_target - h_center) > VZ_DEADBAND:
+                lim = VZ_MAX_GROUND if self.h_target <= 0 else VZ_MAX_FLY
+                c_t = max(-lim, min(lim, VZ_GAIN * (self.h_target - h_center)))
             else:
                 c_t = 0.0
-            # 趋势平滑(加速度限制 0.5 m/s²): 去除死区边界/注入恢复等跳变 → 平滑攀升/下降
-            self._c_smooth += max(-0.5 * self.dt, min(0.5 * self.dt, c_t - self._c_smooth))
+            # 趋势平滑(加速度限制): 去除死区边界/注入恢复等跳变 → 平滑攀升/下降
+            self._c_smooth += max(-VZ_RAMP_ACCEL * self.dt,
+                                  min(VZ_RAMP_ACCEL * self.dt, c_t - self._c_smooth))
             c = self._c_smooth
-            h_floor = 8.0                                       # 温和地面排斥起始高度
-            a_z = 2.0                                           # 垂直加速度限制(平滑, 消振荡)
             for i, d, av in zip(norm_idx, normals, avoiding):
                 vz_t = d.command[3]                             # 算法z(自然, 含避让三维)
                 if not av:
                     vz_t -= c                                   # 非避让: 加平滑整体趋势(避让中自由)
                 h_i = -d.pos_ned[2]
-                if self.h_target > 0 and h_i < h_floor:
-                    vz_t -= min(1.0, 0.3 * (h_floor - h_i))    # 温和地面排斥(连续梯度, 不推楼顶)
+                if self.h_target > 0 and h_i < FLOOR_REPEL_HEIGHT:
+                    # 温和地面排斥(连续梯度, 不推楼顶)
+                    vz_t -= min(FLOOR_REPEL_MAX, FLOOR_REPEL_GAIN * (FLOOR_REPEL_HEIGHT - h_i))
                 # 垂直速度平滑(加速度限制): 消除避让/注入/趋势/地面一切跳变 → 无振荡
                 vz_s = self._vz_smooth.get(i, vz_t)
-                vz_s += max(-a_z * self.dt, min(a_z * self.dt, vz_t - vz_s))
+                vz_s += max(-VZ_SMOOTH_ACCEL * self.dt, min(VZ_SMOOTH_ACCEL * self.dt, vz_t - vz_s))
                 self._vz_smooth[i] = vz_s
                 d.command[3] = vz_s
                 # Stage 13 冲突协调：方案E 的向下趋势不得使高空 UAV 进入建筑物高度区域；
