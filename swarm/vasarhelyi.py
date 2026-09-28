@@ -25,6 +25,7 @@ Ref: Vasarhelyi, Science Robotics, 2018（+ 本项目新增的凝聚项与故障
 import numpy as np
 
 from .height_constraint import BUILDING_CLEARANCE, limit_downward_vel_z
+from ..math_tools.obstacle_distance import uav_cyl_dist3d
 
 
 def get_v_max(v_fric, r, a, p):
@@ -66,7 +67,7 @@ def compute_vel_vasarhelyi(swarm, p_swarm, r_agent, dt):
 
     nb_agent_collisions = 0
     nb_obs_collisions = 0
-    min_dist_obs = 20.0                        # MATLAB 初始魔数 20
+    min_dist_obs = float("inf")                  # Stage 14: 无接近时为 inf（原魔数20无物理意义）
 
     u_ref = np.asarray(p_swarm.u_ref).ravel()  # (3,) 迁移方向（列向量 ravel）
 
@@ -190,11 +191,14 @@ def compute_vel_vasarhelyi(swarm, p_swarm, r_agent, dt):
                 c_obs = p_swarm.cylinders[0:2, obs]
                 r_obs = p_swarm.cylinders[2, obs]
                 dist_ab = np.sqrt(np.sum((pos[0:2, agent] - c_obs) ** 2)) - r_obs
-                nb_obs_collisions = nb_obs_collisions + int(dist_ab < r_agent)
+                # Stage 14: 碰撞统计/最小距离用三维表面距离（高空飞越不误判）；避障排斥仍用 dist_ab
+                h_top = float(cyl_h[obs]) if (cyl_h is not None and obs < len(cyl_h)) else float("inf")
+                dist3d = uav_cyl_dist3d(pos[:, agent], c_obs, r_obs, h_top)
+                nb_obs_collisions = nb_obs_collisions + int(dist3d < r_agent)
                 v_obs_virtual = (pos[0:2, agent] - c_obs) / (dist_ab + r_obs) * p_swarm.v_shill
                 vel_ab = np.sqrt(np.sum((vel[0:2, agent] - v_obs_virtual) ** 2))
-                if dist_ab < min_dist_obs:
-                    min_dist_obs = dist_ab
+                if dist3d < min_dist_obs:
+                    min_dist_obs = dist3d
                 v_obs_max = get_v_max(0, dist_ab - p_swarm.r0_shill,
                                       p_swarm.a_shill, p_swarm.p_shill)
                 if vel_ab > v_obs_max:

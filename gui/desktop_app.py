@@ -55,7 +55,7 @@ from SwarmLab_py.visualization.map_drawing import (                    # noqa: E
 from SwarmLab_py.visualization import (                                # noqa: E402
     plot_trajectories, plot_performance)
 from SwarmLab_py.visualization.video_writer import FrameVideoWriter    # noqa: E402
-from SwarmLab_py.math_tools import compute_swarm_performance           # noqa: E402
+from SwarmLab_py.math_tools import compute_swarm_performance, compute_performance_stats  # noqa: E402
 from SwarmLab_py.simulation import new_result_dir                      # noqa: E402
 
 HAVE_PYVISTA = False
@@ -1030,6 +1030,8 @@ class MainWindow(QMainWindow):
         if vel is not None:
             metrics = compute_swarm_performance(pos[:n], vel[:n], c.params.p_swarm,
                                                 dirname=self._result_dir)
+            stats = compute_performance_stats(*metrics)
+            np.savez(os.path.join(self._result_dir, "performance_stats.npz"), **stats)
             th = np.arange(n) * c.dt
             figs = plot_performance(th, *metrics,
                                     collisions_history=c.swarm.collisions_history[:n],

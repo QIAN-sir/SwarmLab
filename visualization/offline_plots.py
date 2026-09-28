@@ -91,9 +91,12 @@ def plot_performance(time_history, safety, order, union, alg_conn, safety_obs, m
         if dirname:
             f.savefig(os.path.join(dirname, key + ".png"), dpi=150, bbox_inches="tight")
 
-    # ---- 障碍物最小距离 ----
+    # ---- 障碍物最小距离（三维表面距离；无建筑=nan 跳过）----
     f = plt.figure(figsize=(6, 4))
-    plt.plot(time_history, np.min(np.asarray(min_d_obs), axis=1), lw=1.5)
+    md = np.asarray(min_d_obs, dtype=float)
+    with np.errstate(all="ignore"):
+        md_min = np.nanmin(md, axis=1) if md.size else np.array([])
+    plt.plot(time_history, md_min, lw=1.5)
     plt.axhline(0, lw=1.5, color="k")
     plt.xlabel("Time [s]", fontsize=fontsize)
     plt.ylabel("Distance to obstacles", fontsize=fontsize)

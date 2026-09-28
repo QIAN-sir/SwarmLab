@@ -109,7 +109,7 @@ class Simulation:
         self._event_idx = 0
 
         # 记录
-        self.collisions_sum = np.zeros(3)
+        self.collisions_sum = np.array([0.0, 0.0, np.inf])   # [机-机累计, 机-障累计, 全程最小建筑距离]
         self.time_history: List[float] = []
         self.fad_history: List[float] = []
         self.state_history: List[str] = []
@@ -175,7 +175,9 @@ class Simulation:
         # 1) 故障注入  2) 速度指令  3) fad  4) 状态更新
         self._apply_fault_events(time)
         _, collisions = self.swarm.update_command(self.p_swarm, self.p_swarm.r_coll, self.dt)
-        self.collisions_sum = self.collisions_sum + np.asarray(collisions, dtype=float)
+        coll = np.asarray(collisions, dtype=float)
+        self.collisions_sum[0:2] += coll[0:2]                    # 碰撞计数累加
+        self.collisions_sum[2] = min(self.collisions_sum[2], coll[2])   # 全程最小建筑距离(running-min)
         self.swarm.fad = self._compute_fad(time)
         self.swarm.update_state(self.wind, time, self.swarm.fad)
 

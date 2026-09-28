@@ -27,6 +27,7 @@ import math
 import numpy as np
 
 from .height_constraint import BUILDING_CLEARANCE, limit_downward_vel_z
+from ..math_tools.obstacle_distance import uav_cyl_dist3d
 
 
 # ===========================================================================
@@ -117,7 +118,7 @@ def compute_vel_olfati_saber(swarm, p_swarm, r_agent, dt):
 
     nb_agent_collisions = 0
     nb_obs_collisions = 0
-    min_dist_obs = 20.0
+    min_dist_obs = float("inf")                  # Stage 14: 无接近时为 inf（原魔数20无物理意义）
 
     # ---- 逐个智能体 ----
     for agent in range(nb_agents):
@@ -256,9 +257,13 @@ def compute_vel_olfati_saber(swarm, p_swarm, r_agent, dt):
                 pos_agent = pos[0:2, agent]
                 vel_agent = vel[0:2, agent]
                 dist_ab = np.sqrt(np.sum((pos[0:2, agent] - c_obs) ** 2)) - r_obs
-                nb_obs_collisions = nb_obs_collisions + int(dist_ab < r_agent)
-                if dist_ab < min_dist_obs:
-                    min_dist_obs = dist_ab
+                # Stage 14: 碰撞统计/最小距离用三维表面距离（高空飞越不误判）；避障排斥仍用 dist_ab
+                h_top = float(cyl_h[obs]) if (cyl_h is not None and obs < len(cyl_h)) else float("inf")
+                pos_ned_agent = np.array([pos[0, agent], pos[1, agent], -pos[2, agent]])
+                dist3d = uav_cyl_dist3d(pos_ned_agent, c_obs, r_obs, h_top)
+                nb_obs_collisions = nb_obs_collisions + int(dist3d < r_agent)
+                if dist3d < min_dist_obs:
+                    min_dist_obs = dist3d
                 if dist_ab < p_swarm.r0:
                     s = r_obs / (r_obs + dist_ab)
                     pos_obs = s * pos_agent + (1 - s) * c_obs

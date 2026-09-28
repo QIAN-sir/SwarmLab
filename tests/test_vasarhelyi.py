@@ -104,7 +104,7 @@ def test_collision_count():
     s, b = _make_swarm([[0.0, 0.5], [0.0, 0.0], [0.0, 0.0]], migration=False)
     _, coll = s.update_command(b.p_swarm, b.p_swarm.r_coll, b.p_sim.dt)
     assert math.isclose(coll[0], 1.0)                       # nb_agent_collisions
-    assert coll[2] == 20.0                                  # min_dist_obs 初值（无障碍）
+    assert math.isinf(coll[2])                              # min_dist_obs 无障碍=inf（Stage14 取代魔数20）
 
 
 def test_velocity_bounding():

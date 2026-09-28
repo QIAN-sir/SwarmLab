@@ -79,7 +79,8 @@ def main():
     for f in figs.values():
         plt.close(f)
 
-    print(f"\n累计碰撞 [机-机, 机-障, min_dist累计] = {np.round(sim.collisions_sum, 2)}")
+    print(f"\n累计碰撞 [机-机, 机-障] = {np.round(sim.collisions_sum[0:2], 2)}; "
+          f"全程最小建筑距离 = {sim.collisions_sum[2]:.2f}")
     print(f"输出目录: {OUT}")
     print("生成文件:", sorted(os.listdir(OUT)))
 

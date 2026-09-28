@@ -104,11 +104,54 @@ def test_shapes_multi_step():
     assert min_d_obs.shape == (3, 3)
 
 
+def test_obstacle_dist3d_geometry():
+    """点-有限高圆柱三维表面距离手工核对。"""
+    from SwarmLab_py.math_tools import uav_cyl_dist3d
+    assert math.isclose(uav_cyl_dist3d(np.array([0, 0, -50.]), [0, 0], 10, 30), 20.0)   # 正上方 dz=20
+    assert math.isclose(uav_cyl_dist3d(np.array([0, 0, -10.]), [0, 0], 10, 30), 0.0)    # 柱身内=0
+    assert math.isclose(uav_cyl_dist3d(np.array([25, 0, -10.]), [0, 0], 10, 30), 15.0)  # 低空侧面
+    assert math.isclose(uav_cyl_dist3d(np.array([25, 0, -50.]), [0, 0], 10, 30), 25.0)  # 高空斜向
+
+
+def test_high_altitude_no_false_collision():
+    """高空飞越不误判碰撞/近距离；低空 footprint 内判碰撞。"""
+    p = build_params("point_mass", "olfati_saber", active_environment=True, seed=0).p_swarm
+    p.cylinders = np.array([[0.], [0.], [10.]]); p.n_cyl = 1; p.cyl_heights = np.array([30.])
+    (_, _, _, _, sobs, mdo) = compute_swarm_performance(
+        np.array([[0, 0, -50.]]), np.array([[1, 0, 0.]]), p)
+    assert math.isclose(sobs[0], 1.0), f"高空误判碰撞 sobs={sobs[0]}"
+    assert math.isclose(mdo[0, 0], 20.0), f"高空 min_d_obs 应=20, got {mdo[0, 0]}"
+    (_, _, _, _, so2, md2) = compute_swarm_performance(
+        np.array([[0, 0, -10.]]), np.array([[1, 0, 0.]]), p)
+    assert so2[0] < 1.0 and math.isclose(md2[0, 0], 0.0)
+
+
+def test_fault_zero_vel_no_nan():
+    """失效零速 UAV 不导致 order/union 除零 nan（健康子集）。"""
+    (safety, order, union, ac, sobs, mdo) = compute_swarm_performance(
+        np.array([[0, 0, 0, 10, 0, 0]]), np.array([[0, 0, 0, 1, 0, 0]]),
+        build_params("point_mass", "olfati_saber", seed=0).p_swarm)
+    assert not np.isnan(order[0]), "失效零速导致 order nan"
+    assert not np.isnan(union[0]), "失效零速导致 union nan"
+
+
+def test_stats():
+    from SwarmLab_py.math_tools import compute_performance_stats
+    (safety, order, union, ac, sobs, mdo) = compute_swarm_performance(
+        np.array([[0, 0, 0, 10, 0, 0]]), np.array([[1, 0, 0, 1, 0, 0]]),
+        build_params("point_mass", "olfati_saber", seed=0).p_swarm)
+    st = compute_performance_stats(safety, order, union, ac, sobs, mdo)
+    assert "uav_collision_steps" in st and "min_building_dist" in st
+    assert st["uav_collision_steps"] == 0
+
+
 def _run_all():
     tests = [
         test_pos2dist, test_compute_neighborhood, test_network_components,
         test_safety_and_order_connected, test_safety_collision, test_order_opposite,
         test_union_disconnected, test_safety_obs_with_cylinders, test_shapes_multi_step,
+        test_obstacle_dist3d_geometry, test_high_altitude_no_false_collision,
+        test_fault_zero_vel_no_nan, test_stats,
     ]
     passed = failed = 0
     for t in tests:

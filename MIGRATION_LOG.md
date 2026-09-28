@@ -3,7 +3,7 @@
 > 依据迁移计划 §2.4「修改必须可追踪」：每阶段记录 修改/新增/删除文件、原因、
 > MATLAB↔Python 对应、测试结果、已知问题。
 > 权威 MATLAB 源码：`大创车辆路径规划/大创文件——单群避障版/swarmlab-master`
-> （= 用户提供的 zip，103 个 `.m` 文件哈希全一致）。架构分析见 `PROJECT_ARCHITECTURE.md`。
+> （= WL提供的 zip，103 个 `.m` 文件哈希全一致）。架构分析见 `PROJECT_ARCHITECTURE.md`。
 
 ---
 
@@ -12,14 +12,15 @@
 - 所有迁移的 Python 代码与生成的文件夹统一置于 `SwarmLab_py/`。
 - **按功能分类归入同一文件夹**，文件夹命名参考 MATLAB 开发文件存放规则：
 
-| Python 文件夹 | 对应 MATLAB 目录 | 引入阶段 |
-|---|---|---|
-| `enums/` | `enumerators/` | Phase 1 ✅ |
-| `tests/` | （新增，对照测试） | Phase 1 ✅ |
-| `parameters/` | `parameters/` | Phase 2（待） |
-| `core/` | `@Drone/`, `@Swarm/` | Phase 3–4（待） |
-| `swarm/` | `@Swarm/compute_vel_*` | Phase 6–7（待） |
-| `physics/` `control/` `estimation/` `guidance/` `visualization/` | 同名目录 | Phase 8–13（待） |
+
+| Python 文件夹                                                    | 对应 MATLAB 目录       | 引入阶段          |
+| ---------------------------------------------------------------- | ---------------------- | ----------------- |
+| `enums/`                                                         | `enumerators/`         | Phase 1 ✅        |
+| `tests/`                                                         | （新增，对照测试）     | Phase 1 ✅        |
+| `parameters/`                                                    | `parameters/`          | Phase 2（待）     |
+| `core/`                                                          | `@Drone/`, `@Swarm/`   | Phase 3–4（待）  |
+| `swarm/`                                                         | `@Swarm/compute_vel_*` | Phase 6–7（待）  |
+| `physics/` `control/` `estimation/` `guidance/` `visualization/` | 同名目录               | Phase 8–13（待） |
 
 ---
 
@@ -29,16 +30,17 @@
 
 ### 新增文件（8）
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `SwarmLab_py/__init__.py` | — | 包根，项目说明 |
-| `SwarmLab_py/enums/__init__.py` | `enumerators/`（目录） | 统一导出 5 个枚举 |
-| `SwarmLab_py/enums/drone_type.py` | `enumerators/DroneType.m` | quadcopter/fixed_wing/point_mass |
-| `SwarmLab_py/enums/drone_state.py` | `enumerators/DroneState.m` | ★Normal/Stalled/Drifting（二次开发新增） |
-| `SwarmLab_py/enums/path_type.py` | `enumerators/PathType.m` | fillet/dubins/straight_rrt |
-| `SwarmLab_py/enums/swarm_algorithm.py` | `enumerators/SwarmAlgorithm.m` | vasarhelyi/olfati_saber |
-| `SwarmLab_py/enums/swarm_viewer_type.py` | `enumerators/SwarmViewerType.m` | drone/agent/agent_with_energy |
-| `SwarmLab_py/tests/test_enums.py` | — | 对照测试（值/数量/字符串比较行为） |
+
+| Python 文件                              | 对应 MATLAB                     | 说明                                      |
+| ---------------------------------------- | ------------------------------- | ----------------------------------------- |
+| `SwarmLab_py/__init__.py`                | —                              | 包根，项目说明                            |
+| `SwarmLab_py/enums/__init__.py`          | `enumerators/`（目录）          | 统一导出 5 个枚举                         |
+| `SwarmLab_py/enums/drone_type.py`        | `enumerators/DroneType.m`       | quadcopter/fixed_wing/point_mass          |
+| `SwarmLab_py/enums/drone_state.py`       | `enumerators/DroneState.m`      | ★Normal/Stalled/Drifting（二次开发新增） |
+| `SwarmLab_py/enums/path_type.py`         | `enumerators/PathType.m`        | fillet/dubins/straight_rrt                |
+| `SwarmLab_py/enums/swarm_algorithm.py`   | `enumerators/SwarmAlgorithm.m`  | vasarhelyi/olfati_saber                   |
+| `SwarmLab_py/enums/swarm_viewer_type.py` | `enumerators/SwarmViewerType.m` | drone/agent/agent_with_energy             |
+| `SwarmLab_py/tests/test_enums.py`        | —                              | 对照测试（值/数量/字符串比较行为）        |
 
 ### 修改 / 删除文件
 
@@ -86,7 +88,6 @@
 - **KI-2**：`SwarmAlgorithm.value` 在 MATLAB 中用于 `run(strcat("param_",算法))`
   的动态脚本加载；Phase 2 迁移参数系统时须改为显式字典分派/工厂函数。
 
-
 ---
 
 ## Phase 2 —— 参数系统
@@ -96,18 +97,19 @@
 
 ### 新增文件（10）
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `parameters/__init__.py` | （装配入口） | 导出 + `ParamsBundle` + `build_params()` |
-| `parameters/physics.py` | `param_physics.m` | `PhysicsParams`(gravity, rho) |
-| `parameters/sim.py` | `param_sim.m` | `SimParams`(dt=0.01…) |
-| `parameters/battery.py` | `param_battery.m` | `BatteryParams`(16 字段) |
-| `parameters/sensors.py` | `param_drone/param_sensors.m` | `SensorParamsMixin`(+Q/R 派生) |
-| `parameters/drone.py` | `param_drone.m`, `param_quadcopter.m` | `DroneParams`/`PointMassParams`/`QuadcopterParams` + `build_drone_params` + `compute_inertia_gammas` |
-| `parameters/fixed_wing.py` | `param_fixed_wing.m`(+`Td2idx`/`compute_tf_model`/`table_T.mat`) | `FixedWingParams` + `XYU_TRIM` 常量 |
-| `parameters/map_params.py` | `param_map.m`, `create_shifted_buildings.m` | `MapParams` + `create_shifted_buildings` + `build_map_params` |
-| `parameters/swarm.py` | `param_swarm.m`, `param_olfati_saber.m`, `param_vasarhelyi.m` | `SwarmParams`/`OlfatiSaberParams`/`VasarhelyiParams` + `build_swarm_params` |
-| `tests/test_parameters.py` | — | 9 项对照测试（独立手算期望值） |
+
+| Python 文件                | 对应 MATLAB                                                      | 说明                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `parameters/__init__.py`   | （装配入口）                                                     | 导出 +`ParamsBundle` + `build_params()`                                                              |
+| `parameters/physics.py`    | `param_physics.m`                                                | `PhysicsParams`(gravity, rho)                                                                        |
+| `parameters/sim.py`        | `param_sim.m`                                                    | `SimParams`(dt=0.01…)                                                                               |
+| `parameters/battery.py`    | `param_battery.m`                                                | `BatteryParams`(16 字段)                                                                             |
+| `parameters/sensors.py`    | `param_drone/param_sensors.m`                                    | `SensorParamsMixin`(+Q/R 派生)                                                                       |
+| `parameters/drone.py`      | `param_drone.m`, `param_quadcopter.m`                            | `DroneParams`/`PointMassParams`/`QuadcopterParams` + `build_drone_params` + `compute_inertia_gammas` |
+| `parameters/fixed_wing.py` | `param_fixed_wing.m`(+`Td2idx`/`compute_tf_model`/`table_T.mat`) | `FixedWingParams` + `XYU_TRIM` 常量                                                                  |
+| `parameters/map_params.py` | `param_map.m`, `create_shifted_buildings.m`                      | `MapParams` + `create_shifted_buildings` + `build_map_params`                                        |
+| `parameters/swarm.py`      | `param_swarm.m`, `param_olfati_saber.m`, `param_vasarhelyi.m`    | `SwarmParams`/`OlfatiSaberParams`/`VasarhelyiParams` + `build_swarm_params`                          |
+| `tests/test_parameters.py` | —                                                               | 9 项对照测试（独立手算期望值）                                                                       |
 
 ### 修改 / 删除文件
 
@@ -165,7 +167,6 @@ $ python SwarmLab_py/tests/test_enums.py   → 4/4 PASS（Phase 1 回归）
   我再加一个 `scipy.io.loadmat` 对照测试。wing 的 `kd_phi/kp_chi/.../ki_va_theta`
   目前仅验证“有限且量级合理”，建议纳入该快照 diff。
 
-
 ---
 
 ## Phase 3 —— Drone 类（point_mass 主线优先）
@@ -175,13 +176,14 @@ $ python SwarmLab_py/tests/test_enums.py   → 4/4 PASS（Phase 1 回归）
 
 ### 新增文件（5）
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `core/__init__.py` | `@Drone/`（目录） | 导出 `Drone` |
-| `core/drone.py` | `@Drone/Drone.m` | Drone 类（全属性 + 构造 + point_mass 故障机 + 电池；真实动力学/路径/绘图桩化） |
-| `control/__init__.py` | `control/control_drone/`（目录） | 导出 `true_states` |
-| `control/true_states.py` | `control/control_drone/true_states.m` | 伪状态估计（Drone.set_pos / estimate_states 依赖） |
-| `tests/test_drone.py` | — | 7 项对照测试（构造/访问器/三态/drift 衰减/桩） |
+
+| Python 文件              | 对应 MATLAB                           | 说明                                                                           |
+| ------------------------ | ------------------------------------- | ------------------------------------------------------------------------------ |
+| `core/__init__.py`       | `@Drone/`（目录）                     | 导出`Drone`                                                                    |
+| `core/drone.py`          | `@Drone/Drone.m`                      | Drone 类（全属性 + 构造 + point_mass 故障机 + 电池；真实动力学/路径/绘图桩化） |
+| `control/__init__.py`    | `control/control_drone/`（目录）      | 导出`true_states`                                                              |
+| `control/true_states.py` | `control/control_drone/true_states.m` | 伪状态估计（Drone.set_pos / estimate_states 依赖）                             |
+| `tests/test_drone.py`    | —                                    | 7 项对照测试（构造/访问器/三态/drift 衰减/桩）                                 |
 
 ### 修改 / 删除文件
 
@@ -236,7 +238,6 @@ Total: 7  Passed: 7  Failed: 0
 - 待 Phase 4：`Swarm` 类（`add_drone`/`set_dronestate`/`update_command`/`update_state(fad)`/
   `get_barycenter` 仅健康机）+ 主循环 `fad` 衰减与故障注入的端到端联调。
 
-
 ---
 
 ## Phase 4 —— Swarm 类
@@ -246,13 +247,14 @@ Total: 7  Passed: 7  Failed: 0
 
 ### 新增文件（4）/ 修改（1）
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `core/swarm.py`（新增） | `@Swarm/Swarm.m` | Swarm 类（管理 + set_dronestate + update_state(fad) + get_barycenter + getters；算法/绘图桩） |
-| `math_tools/rb2i.py`（新增） | `math_tools/Rb2i.m` | 机体→NED 旋转矩阵（get_vel_ned 依赖） |
-| `math_tools/__init__.py`（新增） | `math_tools/`（目录） | 导出 Rb2i |
-| `tests/test_swarm.py`（新增） | — | 15 项对照测试 |
-| `core/__init__.py`（修改） | — | 增导出 `Swarm` |
+
+| Python 文件                      | 对应 MATLAB           | 说明                                                                                          |
+| -------------------------------- | --------------------- | --------------------------------------------------------------------------------------------- |
+| `core/swarm.py`（新增）          | `@Swarm/Swarm.m`      | Swarm 类（管理 + set_dronestate + update_state(fad) + get_barycenter + getters；算法/绘图桩） |
+| `math_tools/rb2i.py`（新增）     | `math_tools/Rb2i.m`   | 机体→NED 旋转矩阵（get_vel_ned 依赖）                                                        |
+| `math_tools/__init__.py`（新增） | `math_tools/`（目录） | 导出 Rb2i                                                                                     |
+| `tests/test_swarm.py`（新增）    | —                    | 15 项对照测试                                                                                 |
+| `core/__init__.py`（修改）       | —                    | 增导出`Swarm`                                                                                 |
 
 - 无 MATLAB 改动。
 
@@ -299,7 +301,6 @@ $ python SwarmLab_py/tests/test_swarm.py   → 15/15 PASS
 - **进度提示**：原计划 **Phase 5（point_mass: normal/stalled/drifting/drone_state/fad）已在
   Phase 3 内完成并由 test_drone 充分验证**，故下一步直接进入 **Phase 6（Vasarhelyi）**。
 
-
 ---
 
 ## Phase 6 —— Vasarhelyi 算法
@@ -310,12 +311,13 @@ $ python SwarmLab_py/tests/test_swarm.py   → 15/15 PASS
 
 ### 新增文件（3）/ 修改（1）
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `swarm/__init__.py`（新增） | `@Swarm/`（算法部分） | 群体算法包，导出 compute_vel_vasarhelyi/get_v_max |
-| `swarm/vasarhelyi.py`（新增） | `@Swarm/compute_vel_vasarhelyi.m`（424 行） | Vasarhelyi 算法 + get_v_max 制动曲线 |
-| `tests/test_vasarhelyi.py`（新增） | — | 9 项对照测试 |
-| `core/swarm.py`（修改） | — | `Swarm.compute_vel_vasarhelyi` 由桩改为委托到 `swarm/vasarhelyi.py` |
+
+| Python 文件                        | 对应 MATLAB                                 | 说明                                                                |
+| ---------------------------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| `swarm/__init__.py`（新增）        | `@Swarm/`（算法部分）                       | 群体算法包，导出 compute_vel_vasarhelyi/get_v_max                   |
+| `swarm/vasarhelyi.py`（新增）      | `@Swarm/compute_vel_vasarhelyi.m`（424 行） | Vasarhelyi 算法 + get_v_max 制动曲线                                |
+| `tests/test_vasarhelyi.py`（新增） | —                                          | 9 项对照测试                                                        |
+| `core/swarm.py`（修改）            | —                                          | `Swarm.compute_vel_vasarhelyi` 由桩改为委托到 `swarm/vasarhelyi.py` |
 
 - 无 MATLAB 改动。
 
@@ -363,7 +365,6 @@ $ python SwarmLab_py/tests/test_vasarhelyi.py   → 9/9 PASS
   位置/速度匹配、故障邻居（增强排斥 + 侧向滑移 + `is_stuck` 主动逃逸 `rear_blocked/escape_strength`）、
   迁移、障碍/墙、`repulsion_cubic_arena`；⚠️ 注意 §14 B-8（`isempty(max_v/max_a)` 限幅死代码，须忠实保留）。
 
-
 ---
 
 ## Phase 7 —— Olfati-Saber 算法
@@ -372,13 +373,14 @@ $ python SwarmLab_py/tests/test_vasarhelyi.py   → 9/9 PASS
 
 ### 新增文件（2）/ 修改（3）
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `swarm/olfati_saber.py`（新增） | `@Swarm/compute_vel_olfati_saber.m`（511 行） | Olfati-Saber + `rho_f`/`rho_der_f`/`repulsion_cubic_arena` |
-| `tests/test_olfati_saber.py`（新增） | — | 8 项对照测试 |
-| `swarm/__init__.py`（修改） | — | 增导出 compute_vel_olfati_saber |
-| `core/swarm.py`（修改） | — | `Swarm.compute_vel_olfati_saber` 由桩改为委托 |
-| `tests/test_swarm.py`（修改） | — | `test_update_command_stub` → `test_update_command_dispatch`（两算法均可跑通） |
+
+| Python 文件                          | 对应 MATLAB                                   | 说明                                                                           |
+| ------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `swarm/olfati_saber.py`（新增）      | `@Swarm/compute_vel_olfati_saber.m`（511 行） | Olfati-Saber +`rho_f`/`rho_der_f`/`repulsion_cubic_arena`                      |
+| `tests/test_olfati_saber.py`（新增） | —                                            | 8 项对照测试                                                                   |
+| `swarm/__init__.py`（修改）          | —                                            | 增导出 compute_vel_olfati_saber                                                |
+| `core/swarm.py`（修改）              | —                                            | `Swarm.compute_vel_olfati_saber` 由桩改为委托                                  |
+| `tests/test_swarm.py`（修改）        | —                                            | `test_update_command_stub` → `test_update_command_dispatch`（两算法均可跑通） |
 
 - 无 MATLAB 改动。
 
@@ -430,7 +432,6 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
   `fad=1/(1+0.2*(t-t_fault))`(含<0.1→0) → update_state(fad)} → 历史/性能。这是让**主线端到端跑通**的最后一环。
 - 之后按原计划 Phase 8（Physics）→ 9（Control）→ 10（Estimation）→ 11（Path）→ 12（Viz）→ 13（GUI）补真实动力学与外设。
 
-
 ---
 
 ## Stage 1 —— 主线仿真 runner（原 KI-10）
@@ -443,12 +444,13 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件（4）
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `simulation/runner.py` | `example_olfati_saber.m`/`example_vasarhelyi.m` 主循环 | `Simulation` 引擎（step/run 双模式 + 故障注入 + fad） |
-| `simulation/__init__.py` | — | 导出 `Simulation`/`FaultEvent` |
-| `examples/run_swarm_fault.py` | `example_*.m` | headless 可运行示例（命令行） |
-| `tests/test_simulation.py` | — | 10 项端到端测试 |
+
+| Python 文件                   | 对应 MATLAB                                            | 说明                                                  |
+| ----------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| `simulation/runner.py`        | `example_olfati_saber.m`/`example_vasarhelyi.m` 主循环 | `Simulation` 引擎（step/run 双模式 + 故障注入 + fad） |
+| `simulation/__init__.py`      | —                                                     | 导出`Simulation`/`FaultEvent`                         |
+| `examples/run_swarm_fault.py` | `example_*.m`                                          | headless 可运行示例（命令行）                         |
+| `tests/test_simulation.py`    | —                                                     | 10 项端到端测试                                       |
 
 ### 关键设计决策
 
@@ -485,7 +487,6 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
   `math_tools/compute_swarm_performance`（safety/order/union/alg_conn/safety_obs/min_d_obs）。
 - 需安装 matplotlib（届时提醒）。
 
-
 ---
 
 ## Stage 2 —— 可视化 + 性能指标（matplotlib 3.11.2）
@@ -494,17 +495,18 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `math_tools/pos2dist.py` | `pos2dist.m` | 位置→两两距离（pdist/squareform） |
-| `math_tools/compute_neighborhood.py` | `compute_neighborhood.m` | 距离→邻接矩阵（含 B-16） |
-| `math_tools/network_components.py` | `network_components.m` | 连通分量（Larremore） |
-| `math_tools/compute_swarm_performance.py` | `compute_swarm_performance.m` | 6 指标（pdist2→cdist、eig→eigvalsh） |
-| `visualization/map_drawing.py` | `draw_buildings.m`/`draw_cylinders.m` | 长方体/棱柱障碍（Poly3DCollection） |
-| `visualization/swarm_viewer.py` | `SwarmViewer.m` | 在线 3D + 故障 ○/□/△ + 环境首帧绘制 |
-| `visualization/offline_plots.py` | `plot_trajectories_offline.m`/`plot_swarm_performance.m` | 轨迹图 + 性能/碰撞/障碍距离图 |
-| `examples/run_swarm_viz.py` | example 出图部分 | headless demo，输出 12 张 PNG |
-| `tests/test_performance.py` / `test_visualization.py` | — | 9 + 4 项测试 |
+
+| Python 文件                                           | 对应 MATLAB                                              | 说明                                   |
+| ----------------------------------------------------- | -------------------------------------------------------- | -------------------------------------- |
+| `math_tools/pos2dist.py`                              | `pos2dist.m`                                             | 位置→两两距离（pdist/squareform）     |
+| `math_tools/compute_neighborhood.py`                  | `compute_neighborhood.m`                                 | 距离→邻接矩阵（含 B-16）              |
+| `math_tools/network_components.py`                    | `network_components.m`                                   | 连通分量（Larremore）                  |
+| `math_tools/compute_swarm_performance.py`             | `compute_swarm_performance.m`                            | 6 指标（pdist2→cdist、eig→eigvalsh） |
+| `visualization/map_drawing.py`                        | `draw_buildings.m`/`draw_cylinders.m`                    | 长方体/棱柱障碍（Poly3DCollection）    |
+| `visualization/swarm_viewer.py`                       | `SwarmViewer.m`                                          | 在线 3D + 故障 ○/□/△ + 环境首帧绘制 |
+| `visualization/offline_plots.py`                      | `plot_trajectories_offline.m`/`plot_swarm_performance.m` | 轨迹图 + 性能/碰撞/障碍距离图          |
+| `examples/run_swarm_viz.py`                           | example 出图部分                                         | headless demo，输出 12 张 PNG          |
+| `tests/test_performance.py` / `test_visualization.py` | —                                                       | 9 + 4 项测试                           |
 
 ### 关键设计决策
 
@@ -564,12 +566,13 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增/修改文件
 
-| Python 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
+
+| Python 文件                  | 对应 MATLAB                | 说明                                                                 |
+| ---------------------------- | -------------------------- | -------------------------------------------------------------------- |
 | `gui/desktop_app.py`（新增） | `examples/GUI_swarm.mlapp` | PySide6 桌面 GUI：复刻原版面板 + 内嵌 matplotlib 3D + 运行中实时控制 |
-| `gui/__init__.py`（改） | — | 包说明 + 启动命令（desktop_app） |
-| `tests/test_gui.py`（改） | — | PySide6 offscreen headless 测试 |
-| `gui/app.py`（删除） | — | Streamlit 版（舍弃） |
+| `gui/__init__.py`（改）      | —                         | 包说明 + 启动命令（desktop_app）                                     |
+| `tests/test_gui.py`（改）    | —                         | PySide6 offscreen headless 测试                                      |
+| `gui/app.py`（删除）         | —                         | Streamlit 版（舍弃）                                                 |
 
 ### 面板复刻（对照原版截图）
 
@@ -612,22 +615,24 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### Phase 8 —— physics（新增）
 
-| 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `physics/__init__.py` | — | 导出 |
-| `physics/forces_moments.py` | forces_moments_quad.m / _wing.m | 机体系力/力矩，out(12)=[F;M;Va;alpha;beta;wn;we;wd] |
-| `physics/kinematics.py` | kinematics_ode_fun.m | 刚体 12 维导数（orientation 冻结=步初，供 solve_ivp/RK23≈ode23） |
-| `tests/test_physics.py` | — | 13 项解析对照（悬停平衡 F=M=0、力矩符号、翼升力、刚体导数 vs Rb2i） |
+
+| 文件                        | 对应 MATLAB                     | 说明                                                                |
+| --------------------------- | ------------------------------- | ------------------------------------------------------------------- |
+| `physics/__init__.py`       | —                              | 导出                                                                |
+| `physics/forces_moments.py` | forces_moments_quad.m / _wing.m | 机体系力/力矩，out(12)=[F;M;Va;alpha;beta;wn;we;wd]                 |
+| `physics/kinematics.py`     | kinematics_ode_fun.m            | 刚体 12 维导数（orientation 冻结=步初，供 solve_ivp/RK23≈ode23）   |
+| `tests/test_physics.py`     | —                              | 13 项解析对照（悬停平衡 F=M=0、力矩符号、翼升力、刚体导数 vs Rb2i） |
 
 ### Phase 9 —— control（四旋翼，新增）
 
-| 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `control/pid.py` | pid_loop.m | PID 回路 + 对称/非对称饱和；param 字典存 Drone.P_* |
-| `control/autopilot_quad.py` | autopilot_quad.m | 4 版本 + hold 函数 + mixer；y=[delta(4);x_command(19)] |
-| `control/autopilot_wing.py` | autopilot_wing.m | 固定翼（uavbook 主路径 + tuning/TECS）；y=[delta(4);x_command(19)] |
-| `control/__init__.py`（改） | — | 导出 pid_loop/autopilot_quad/autopilot_wing/mixer |
-| `tests/test_real_dynamics.py` | — | 5 项闭环（悬停保持/北向响应/delta 限幅/fixed_wing 可运行） |
+
+| 文件                          | 对应 MATLAB      | 说明                                                               |
+| ----------------------------- | ---------------- | ------------------------------------------------------------------ |
+| `control/pid.py`              | pid_loop.m       | PID 回路 + 对称/非对称饱和；param 字典存 Drone.P_*                 |
+| `control/autopilot_quad.py`   | autopilot_quad.m | 4 版本 + hold 函数 + mixer；y=[delta(4);x_command(19)]             |
+| `control/autopilot_wing.py`   | autopilot_wing.m | 固定翼（uavbook 主路径 + tuning/TECS）；y=[delta(4);x_command(19)] |
+| `control/__init__.py`（改）   | —               | 导出 pid_loop/autopilot_quad/autopilot_wing/mixer                  |
+| `tests/test_real_dynamics.py` | —               | 5 项闭环（悬停保持/北向响应/delta 限幅/fixed_wing 可运行）         |
 
 ### 接通 Drone 真实动力学（core/drone.py 改）
 
@@ -668,13 +673,14 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件
 
-| 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `guidance/__init__.py` | — | 导出 |
-| `guidance/path_planner.py` | plan_RRT.m | RRT + 子函数（generate_random_node/collision/points_along_path/down_at_NE/extend_tree/find_minimum_path/smooth_path）；plot_map 未迁移（Phase 12） |
-| `guidance/path_manager.py` | path_manager_quad.m | path_manager_quad + fillet 圆角过渡；persistent→状态字典（Drone.pm_state，计划 §10） |
-| `guidance/path_follower.py` | path_follower_quad.m | 路径跟踪→速度指令 [psi_c;vn_c;ve_c;vd_c] |
-| `tests/test_guidance.py` | — | 14 项（RRT 无碰撞/起终点、manager nb=0/fillet、follower、Drone 链路） |
+
+| 文件                        | 对应 MATLAB          | 说明                                                                                                                                               |
+| --------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guidance/__init__.py`      | —                   | 导出                                                                                                                                               |
+| `guidance/path_planner.py`  | plan_RRT.m           | RRT + 子函数（generate_random_node/collision/points_along_path/down_at_NE/extend_tree/find_minimum_path/smooth_path）；plot_map 未迁移（Phase 12） |
+| `guidance/path_manager.py`  | path_manager_quad.m  | path_manager_quad + fillet 圆角过渡；persistent→状态字典（Drone.pm_state，计划 §10）                                                             |
+| `guidance/path_follower.py` | path_follower_quad.m | 路径跟踪→速度指令 [psi_c;vn_c;ve_c;vd_c]                                                                                                          |
+| `tests/test_guidance.py`    | —                   | 14 项（RRT 无碰撞/起终点、manager nb=0/fillet、follower、Drone 链路）                                                                              |
 
 ### 接通 Drone（core/drone.py 改）
 
@@ -705,14 +711,15 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件
 
-| 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `physics/sensors.py` | physics/sensors.m | IMU+气压计测量 y(8)（normrnd→np.random.normal）；含 B-21 修复 |
-| `physics/gps.py` | physics/gps.m | GPS 测量 y(5)；persistent Markov `mp_n/e/h`→状态字典（`Drone.gps_state`） |
-| `estimation/lp_filter.py` | estimation/lp_filter.m | 一阶低通公式 + `lp_step`（带各通道记忆，B-20 修复） |
-| `estimation/estimate_states.py` | estimation/estimate_states.m | LP + 2 状态(phi/theta) EKF；persistent `x/kf_P`→`Drone.est_state`；B-11/B-22 修复 |
-| `estimation/__init__.py` | — | 导出 lp_filter/lp_step/estimate_states/new_est_state |
-| `tests/test_estimation.py` | — | 32 项（零噪声手算 + 4 bug 修复行为 + Drone 接线 + EKF 稳定性） |
+
+| 文件                            | 对应 MATLAB                  | 说明                                                                              |
+| ------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- |
+| `physics/sensors.py`            | physics/sensors.m            | IMU+气压计测量 y(8)（normrnd→np.random.normal）；含 B-21 修复                    |
+| `physics/gps.py`                | physics/gps.m                | GPS 测量 y(5)；persistent Markov`mp_n/e/h`→状态字典（`Drone.gps_state`）         |
+| `estimation/lp_filter.py`       | estimation/lp_filter.m       | 一阶低通公式 +`lp_step`（带各通道记忆，B-20 修复）                                |
+| `estimation/estimate_states.py` | estimation/estimate_states.m | LP + 2 状态(phi/theta) EKF；persistent`x/kf_P`→`Drone.est_state`；B-11/B-22 修复 |
+| `estimation/__init__.py`        | —                           | 导出 lp_filter/lp_step/estimate_states/new_est_state                              |
+| `tests/test_estimation.py`      | —                           | 32 项（零噪声手算 + 4 bug 修复行为 + Drone 接线 + EKF 稳定性）                    |
 
 ### 接通 Drone（core/drone.py 改）
 
@@ -751,21 +758,23 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件
 
-| 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `guidance/dubins.py` | compute_dubins_param.m | Dubins 参数（RSR/RSL/LSR/LSL 取最短）+ Rz + wrapTo2Pi；返回 dict |
-| `guidance/path_manager_wing.py` | path_manager_wing.m + path_manager_fillet.m + path_manager_dubins.m | 固定翼路径管理（nb0 直线 / fillet / dubins 6状态机）；out(30)；persistent→状态字典 |
-| `tests/test_path_wing.py` | — | 27 项（dubins 几何 / 三分支 / follower 直线·orbit / B-11 chi@12 / wing 闭环不下坠） |
+
+| 文件                            | 对应 MATLAB                                                         | 说明                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `guidance/dubins.py`            | compute_dubins_param.m                                              | Dubins 参数（RSR/RSL/LSR/LSL 取最短）+ Rz + wrapTo2Pi；返回 dict                     |
+| `guidance/path_manager_wing.py` | path_manager_wing.m + path_manager_fillet.m + path_manager_dubins.m | 固定翼路径管理（nb0 直线 / fillet / dubins 6状态机）；out(30)；persistent→状态字典  |
+| `tests/test_path_wing.py`       | —                                                                  | 27 项（dubins 几何 / 三分支 / follower 直线·orbit / B-11 chi@12 / wing 闭环不下坠） |
 
 ### 修改文件
 
-| 文件 | 改动 |
-|---|---|
-| `guidance/path_follower.py` | 新增 `path_follower_wing`（直线/orbit→[Va_c,h_c,chi_c,phi_ff]）；quad chi 索引 @8→@12（B-11） |
-| `guidance/path_manager.py` | quad nb0 分支 chi @8→@12（B-11） |
-| `guidance/__init__.py` | 导出 wing 组件 + compute_dubins_param |
-| `core/drone.py` | **B-18**：构造时 fixed_wing 调 `_init_fixed_wing_trim()`；manage_path/follow_path 接通 fixed_wing 分支 |
-| `tests/test_real_dynamics.py` | `test_fixed_wing_runs`→`test_fixed_wing_trim_flight`（断言平飞不下坠） |
+
+| 文件                          | 改动                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `guidance/path_follower.py`   | 新增`path_follower_wing`（直线/orbit→[Va_c,h_c,chi_c,phi_ff]）；quad chi 索引 @8→@12（B-11）         |
+| `guidance/path_manager.py`    | quad nb0 分支 chi @8→@12（B-11）                                                                      |
+| `guidance/__init__.py`        | 导出 wing 组件 + compute_dubins_param                                                                  |
+| `core/drone.py`               | **B-18**：构造时 fixed_wing 调 `_init_fixed_wing_trim()`；manage_path/follow_path 接通 fixed_wing 分支 |
+| `tests/test_real_dynamics.py` | `test_fixed_wing_runs`→`test_fixed_wing_trim_flight`（断言平飞不下坠）                                |
 
 ### 修复的重大 bug（根因 / 意图 / 修复 / 影响）
 
@@ -802,18 +811,20 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件
 
-| 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
-| `visualization/drone_body.py` | define_quad_body.m / define_wing_body.m / rotate.m / translate.m | 机体几何（quad 21顶点9面 / wing 10顶点3面，0-based 面索引）+ 刚体 rotate/translate |
-| `visualization/drone_viewer.py` | graphics_drone/DroneViewer.m | 单机在线 3D：rotate→translate→NED→ENU→Poly3DCollection；point_mass 散点；center_view 跟随；view(32,47) |
-| `visualization/drone_state_plot.py` | @Drone/plot_state.m | DroneStatePlotter：7 组（Position/Velocity/Acceleration/Air data/Attitude/Angle rates/Actuators）real/est/cmd 时序曲线；uitab→GridSpec；persistent 句柄→Line2D |
-| `examples/run_drone_viz.py` | example_controller.m 可视化部分 | demo：quad 悬停 + wing 配平平飞出图（4 张 PNG） |
-| `tests/test_drone_viz.py` | — | 23 项（几何/变换/viewer/plotter headless 存图） |
+
+| 文件                                | 对应 MATLAB                                                      | 说明                                                                                                                                                             |
+| ----------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `visualization/drone_body.py`       | define_quad_body.m / define_wing_body.m / rotate.m / translate.m | 机体几何（quad 21顶点9面 / wing 10顶点3面，0-based 面索引）+ 刚体 rotate/translate                                                                               |
+| `visualization/drone_viewer.py`     | graphics_drone/DroneViewer.m                                     | 单机在线 3D：rotate→translate→NED→ENU→Poly3DCollection；point_mass 散点；center_view 跟随；view(32,47)                                                       |
+| `visualization/drone_state_plot.py` | @Drone/plot_state.m                                              | DroneStatePlotter：7 组（Position/Velocity/Acceleration/Air data/Attitude/Angle rates/Actuators）real/est/cmd 时序曲线；uitab→GridSpec；persistent 句柄→Line2D |
+| `examples/run_drone_viz.py`         | example_controller.m 可视化部分                                  | demo：quad 悬停 + wing 配平平飞出图（4 张 PNG）                                                                                                                  |
+| `tests/test_drone_viz.py`           | —                                                               | 23 项（几何/变换/viewer/plotter headless 存图）                                                                                                                  |
 
 ### 修改文件
 
-| 文件 | 改动 |
-|---|---|
+
+| 文件                        | 改动                                                            |
+| --------------------------- | --------------------------------------------------------------- |
 | `visualization/__init__.py` | 导出 DroneViewer/DroneStatePlotter/define_body/rotate/translate |
 
 ### 关键实现说明
@@ -845,19 +856,21 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件
 
-| 文件 | 对应 MATLAB | 说明 |
-|---|---|---|
+
+| 文件                            | 对应 MATLAB                                               | 说明                                                                              |
+| ------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `visualization/path_drawing.py` | draw_waypoints.m / draw_path.m + points_along_dubins_path | 航点连线（fillet 直连 / dubins 密集点）+ 当前 path 段（直线/orbit）；含 B-24 修复 |
-| `visualization/video_writer.py` | VideoWriterWithRate.m | figure 按 output_rate 节流录 mp4（matplotlib FFMpegWriter，自动探测 ffmpeg） |
-| `examples/run_drone_video.py` | example_path_manager 可视化+录制 | demo：wing 沿 Dubins 路径飞 + 全局路径视图 + 录 mp4 |
-| `tests/test_path_video.py` | — | 18 项（waypoints/path/dubins 点/B-24/路径层/mp4） |
+| `visualization/video_writer.py` | VideoWriterWithRate.m                                     | figure 按 output_rate 节流录 mp4（matplotlib FFMpegWriter，自动探测 ffmpeg）      |
+| `examples/run_drone_video.py`   | example_path_manager 可视化+录制                          | demo：wing 沿 Dubins 路径飞 + 全局路径视图 + 录 mp4                               |
+| `tests/test_path_video.py`      | —                                                        | 18 项（waypoints/path/dubins 点/B-24/路径层/mp4）                                 |
 
 ### 修改文件
 
-| 文件 | 改动 |
-|---|---|
+
+| 文件                            | 改动                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `visualization/drone_viewer.py` | 叠加路径层：每帧 draw_waypoints + draw_path（`wpt_handle`/`path_handle`，`draw_path_layer` 开关） |
-| `visualization/__init__.py` | 导出 draw_waypoints/draw_path/points_along_dubins_path/VideoWriterWithRate |
+| `visualization/__init__.py`     | 导出 draw_waypoints/draw_path/points_along_dubins_path/VideoWriterWithRate                        |
 
 ### 修复的 bug
 
@@ -886,18 +899,20 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增文件
 
-| 文件 | 说明 |
-|---|---|
-| `simulation/result_dir.py` | `RESULT_ROOT`=SwarmLab_py/result；`new_result_dir(algorithm, base, tag)` 建 `<alg>_<yyyy_mm_dd_HH_MM_SS>[_tag]/` |
-| `result/README.md` | result/ 用途 + 子目录命名 + 每次运行产物清单 |
+
+| 文件                           | 说明                                                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `simulation/result_dir.py`     | `RESULT_ROOT`=SwarmLab_py/result；`new_result_dir(algorithm, base, tag)` 建 `<alg>_<yyyy_mm_dd_HH_MM_SS>[_tag]/`            |
+| `result/README.md`             | result/ 用途 + 子目录命名 + 每次运行产物清单                                                                                |
 | `examples/run_swarm_result.py` | demo：群体故障仿真 → result/<alg>_<ts>/ 存 swarm_simulation.mp4 + 三态帧 + 轨迹 + 6 性能图 + 碰撞/障碍图 + performance.npz |
-| `tests/test_result_dir.py` | 9 项（RESULT_ROOT 位置 / 命名含算法+时间戳+tag / 唯一性） |
+| `tests/test_result_dir.py`     | 9 项（RESULT_ROOT 位置 / 命名含算法+时间戳+tag / 唯一性）                                                                   |
 
 ### 修改文件
 
-| 文件 | 改动 |
-|---|---|
-| `simulation/__init__.py` | 导出 `new_result_dir` / `RESULT_ROOT` |
+
+| 文件                     | 改动                                 |
+| ------------------------ | ------------------------------------ |
+| `simulation/__init__.py` | 导出`new_result_dir` / `RESULT_ROOT` |
 
 ### 验证
 
@@ -916,13 +931,14 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增/修改
 
-| 文件 | 改动 |
-|---|---|
-| `visualization/video_writer.py` | 新增 `FrameVideoWriter`：numpy 帧(H,W,3)→ffmpeg rawvideo 管道→mp4（录 GUI 像素帧） |
-| `gui/desktop_app.py` | 开始仿真→`new_result_dir`+启动 10fps 抓帧定时器；`_capture_frame` 抓 3D 视图 widget（`QWidget.grab()`，pyvista/matplotlib 通用，含用户相机操作）；`_finalize_run` 停止时关视频+`_save_result_plots` 存轨迹/6性能图/碰撞/障碍/npz；`SimController.vel_history` |
-| `visualization/__init__.py` | 导出 `FrameVideoWriter` |
-| `tests/test_gui_result.py` | 9 项（FrameVideoWriter mp4 + GUI 自动记录全链路） |
-| `tests/test_gui.py` | 测试后清理其 result 目录（防回归污染） |
+
+| 文件                            | 改动                                                                                                                                                                                                                                                           |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `visualization/video_writer.py` | 新增`FrameVideoWriter`：numpy 帧(H,W,3)→ffmpeg rawvideo 管道→mp4（录 GUI 像素帧）                                                                                                                                                                            |
+| `gui/desktop_app.py`            | 开始仿真→`new_result_dir`+启动 10fps 抓帧定时器；`_capture_frame` 抓 3D 视图 widget（`QWidget.grab()`，pyvista/matplotlib 通用，含用户相机操作）；`_finalize_run` 停止时关视频+`_save_result_plots` 存轨迹/6性能图/碰撞/障碍/npz；`SimController.vel_history` |
+| `visualization/__init__.py`     | 导出`FrameVideoWriter`                                                                                                                                                                                                                                         |
+| `tests/test_gui_result.py`      | 9 项（FrameVideoWriter mp4 + GUI 自动记录全链路）                                                                                                                                                                                                              |
+| `tests/test_gui.py`             | 测试后清理其 result 目录（防回归污染）                                                                                                                                                                                                                         |
 
 ### 修复的实现 bug
 
@@ -945,10 +961,11 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 修改
 
-| 文件 | 改动 |
-|---|---|
+
+| 文件                 | 改动                                                                                                                                                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `gui/desktop_app.py` | 竖直滑杆「集群中心高度[m]（0=地面/无人车）」0~(max_height+50)，开局同步初始中心高；`SimController.h_target`；`step` 方案E：平滑趋势c_smooth+每机vz_smooth(加速度限制渐变)+算法参考vel_z分离(_alg_velz防累积过冲)+避让中自由三维+温和地面排斥(<8m,不推楼顶)；`_tick` 实时读滑杆 |
-| `tests/test_gui.py` | 高度断言：中心收敛(±3m) + 个体分散 std>0.5(非扁平) + **避让后自动恢复高度** + h_target=0 贴地(无人车) |
+| `tests/test_gui.py`  | 高度断言：中心收敛(±3m) + 个体分散 std>0.5(非扁平) +**避让后自动恢复高度** + h_target=0 贴地(无人车)                                                                                                                                                                          |
 
 ### 高度控制 + 防撞机制（方案E：平滑垂直控制 + 算法参考vel_z分离，迭代后）
 
@@ -979,15 +996,16 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### 新增/修改
 
-| 文件 | 改动 |
-|---|---|
-| `swarm/height_constraint.py`（新） | `building_top_under_uav`(逐建筑物 footprint 内最大顶部高度) / `is_above_buildings` / `limit_downward_vel_z`(高空禁向下=约束可行方向空间)；常量 BUILDING_CLEARANCE=2m, DOWN_HORIZON=5s；受 `height_aware_cyl` 开关 gated |
-| `parameters/swarm.py` | `p_swarm.cyl_heights`(逐圆柱对应建筑物高度, 索引与 cylinders 一致) + `height_aware_cyl`(默认True新行为; False还原MATLAB原2D行为供§17对照) |
-| `swarm/vasarhelyi.py` | cyl 循环加逐建筑物高空跳过(`h_uav > cyl_h[obs]+CLEARANCE → continue`)；末尾 `limit_downward_vel_z` clip vel_z 向下 |
-| `swarm/olfati_saber.py` | 同（内部 z 已 flip，高度=`pos[2]`；clip 在翻回 NED 后） |
-| `gui/desktop_app.py` | 方案E 向下趋势后应用 `limit_downward_vel_z`（冲突协调：中心高度控制不得使高空 UAV 进入建筑高度） |
-| `tests/test_building_height.py`（新） | 18 项（4 场景 + helper 逐建筑物/多建筑不同高度） |
-| `tests/test_matlab_ref.py` | 设 `height_aware_cyl=False` 还原 MATLAB 原行为对照（Stage 13 为有意偏离） |
+
+| 文件                                  | 改动                                                                                                                                                                                                                    |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `swarm/height_constraint.py`（新）    | `building_top_under_uav`(逐建筑物 footprint 内最大顶部高度) / `is_above_buildings` / `limit_downward_vel_z`(高空禁向下=约束可行方向空间)；常量 BUILDING_CLEARANCE=2m, DOWN_HORIZON=5s；受 `height_aware_cyl` 开关 gated |
+| `parameters/swarm.py`                 | `p_swarm.cyl_heights`(逐圆柱对应建筑物高度, 索引与 cylinders 一致) + `height_aware_cyl`(默认True新行为; False还原MATLAB原2D行为供§17对照)                                                                              |
+| `swarm/vasarhelyi.py`                 | cyl 循环加逐建筑物高空跳过(`h_uav > cyl_h[obs]+CLEARANCE → continue`)；末尾 `limit_downward_vel_z` clip vel_z 向下                                                                                                     |
+| `swarm/olfati_saber.py`               | 同（内部 z 已 flip，高度=`pos[2]`；clip 在翻回 NED 后）                                                                                                                                                                 |
+| `gui/desktop_app.py`                  | 方案E 向下趋势后应用`limit_downward_vel_z`（冲突协调：中心高度控制不得使高空 UAV 进入建筑高度）                                                                                                                         |
+| `tests/test_building_height.py`（新） | 18 项（4 场景 + helper 逐建筑物/多建筑不同高度）                                                                                                                                                                        |
+| `tests/test_matlab_ref.py`            | 设`height_aware_cyl=False` 还原 MATLAB 原行为对照（Stage 13 为有意偏离）                                                                                                                                                |
 
 ### 关键设计
 
@@ -1007,6 +1025,54 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ---
 
+## Stage 14 —— 评价体系系统性重构（三维几何距离 + 健康子集口径 + 统计量分离）【完成】
+
+**日期**：2026-09-28　**状态**：✅ 完成（performance 13/13；全量 **253/253**）
+**背景**：评价指标与实际三维仿真表现不一致（高空飞越仍被记碰撞/近距离；失效 UAV 使一致性除零失真）。
+原项目实现仅作参考、不作正确性标准；本次为**对原评价逻辑的修正/重构**，非简单迁移。
+
+### 问题定位（A代码bug/B数据/C公式/D不匹配/E定义不适合）
+
+| 指标 | 原计算 | 问题 | 类 |
+|---|---|---|---|
+| 碰撞历史(机-障)/safety_obs/min_d_obs | 圆柱 **2D 水平距离** | 高空飞越 2D 投影在 footprint 内→误判碰撞/近距离 | C/D |
+| min_d_obs 定义 | 水平距离-半径（到侧面无高度） | 非到建筑物三维表面距离 | C |
+| min_dist_obs 初值 | 魔数 20 | 无物理意义 | C |
+| order(一致性) | 全体含失效、速度余弦 | 失效 vel=0 → **除零 nan** | A/D |
+| union/alg_conn(连通性) | 全体含失效 | 失效机不参与协同，口径未明确 | D/E |
+| runner.collisions_sum[2] | min_dist 逐步累加 | 累加无物理意义 | B |
+| safety(UAV-UAV) | 3D pdist 全体、阈 2*r_coll | ✅ 正确（含失效合理） | 保留 |
+
+### 修改内容
+
+| 文件 | 改动 |
+|---|---|
+| `math_tools/obstacle_distance.py`(新) | `uav_cyl_dist3d`(点-有限高圆柱三维表面距离) / `min_building_dist3d(_all)` |
+| `math_tools/compute_swarm_performance.py`(重构) | safety_obs/min_d_obs 改三维表面距离；order/union/alg_conn 改**健康子集**(零速/失效排除, 可选 states_history)；safety 保持全体3D；新增 `compute_performance_stats`(时间序列→统计)；无建筑=nan |
+| `swarm/vasarhelyi.py` / `olfati_saber.py` | 碰撞统计(nb_obs_collisions/min_dist_obs)改三维表面距离（**避障排斥逻辑不动**）；min_dist_obs 初值 20→inf |
+| `simulation/runner.py` | collisions_sum[2] 改全程最小建筑距离(running-min)，初值 inf |
+| `visualization/offline_plots.py` | min_d_obs 画图 nan 安全(nanmin) |
+| `math_tools/__init__.py` / examples / gui | 导出+调用点适配（存 performance_stats.npz、打印语义） |
+| `tests/test_performance.py` | +4 测试（三维几何手工核对/高空不误判/失效除零/stats） |
+
+### 新指标定义（数学/物理/统计）
+
+- **三维表面距离**：`d=sqrt(d_horiz²+dz²)`，`d_horiz=max(水平距-r,0)`，`dz=h_uav-h_top`(上方)/0(柱身)/-h_uav(地下)。
+  碰撞=`d<r_coll`；min_d_obs=每机每步 d 最小 (T,N)。
+- **safety**：全体(含失效) 3D 两两距<2*r_coll 记碰撞；`1-碰撞对/总对` (T,)。
+- **order**：健康子集邻居速度方向余弦均值 (T,)；零速/失效排除。
+- **union/alg_conn**：健康子集通信图(3D<r)连通分量/(N_h-1)、Fiedler/N_h (T,)。
+- **safety_obs**：每步 `1-碰撞机数/N` (T,)。
+- **stats**：碰撞步数/危险占比/min·mean建筑距离/全连通占比/mean order·safety·alg_conn。
+
+### 验证
+
+- `test_performance` 13/13；全量 **253/253**。
+- 端到端（run_swarm_result, 建筑+失效）：碰撞[0,0]、min建筑距1.97m(避障最近接近未碰撞)、
+  building_collision_steps=0、full_connectivity_ratio=1.0、mean_order=0.64、mean_safety=1.0 → 与实际行为一致。
+
+---
+
 ## 附录 A —— Python 接口基线（权威参照）
 
 > 目的：避免后续开发（Stage-3 GUI、Stage-4 真实动力学等）接口不对齐。以下为**逐文件核实**的
@@ -1021,25 +1087,26 @@ $ python SwarmLab_py/tests/test_olfati_saber.py   → 8/8 PASS
 
 ### A.1 模块完成度
 
-| 模块 | 状态 | 说明 |
-|---|---|---|
-| `enums/` | ✅ | 5 个 `(str,Enum)` |
-| `parameters/` | ✅ | dataclass + 工厂 + `ParamsBundle` |
-| `core/drone.py` | ✅ point_mass | 真实动力学/路径/绘图方法为桩 |
-| `core/swarm.py` | ✅ | 管理 + 故障注入 + 指令分派 + 历史 |
-| `swarm/{olfati_saber,vasarhelyi}.py` | ✅ | 含内联子函数 + 三维高度感知避障（Stage 13） |
-| `swarm/height_constraint.py` | ✅ | 建筑物高度感知+高空禁向下（Stage 13） |
-| `math_tools/` | ✅ | Rb2i/pos2dist/compute_neighborhood/network_components/compute_swarm_performance |
-| `control/true_states.py` | ✅ | 伪真值估计（z_hat 22） |
-| `simulation/runner.py` | ✅ | `Simulation` + `FaultEvent`（主线引擎） |
-| `simulation/result_dir.py` | ✅ | `new_result_dir`/`RESULT_ROOT`（result/<alg>_<ts>/，Stage 10） |
-| `visualization/` | ✅ | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`(含 FrameVideoWriter)（Stage 9/11） |
-| `gui/desktop_app.py` | ✅ | PySide6 桌面 GUI（Stage 3）+ 每次仿真自动记录 result/ + 交互视角视频（Stage 11）+ 集群中心高度滑杆+方案1防撞（Stage 12） |
-| `physics/` | ✅ | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6） |
-| `control/` | ✅ | true_states + pid + autopilot_quad/wing（Stage 4） |
-| `guidance/` | ✅ | plan_RRT + path_manager_quad/wing + path_follower_quad/wing + dubins（Stage 5/7） |
-| `estimation/` | ✅ | lp_filter + estimate_states（LP+2状态EKF，Stage 6；B-11/20/21/22 已修） |
-| 桩（`NotImplementedError`） | ⏳ | plot_state·record_video（P12）；path_manager_wing/path_follower_wing |
+
+| 模块                                 | 状态          | 说明                                                                                                                                                                            |
+| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enums/`                             | ✅            | 5 个`(str,Enum)`                                                                                                                                                                |
+| `parameters/`                        | ✅            | dataclass + 工厂 +`ParamsBundle`                                                                                                                                                |
+| `core/drone.py`                      | ✅ point_mass | 真实动力学/路径/绘图方法为桩                                                                                                                                                    |
+| `core/swarm.py`                      | ✅            | 管理 + 故障注入 + 指令分派 + 历史                                                                                                                                               |
+| `swarm/{olfati_saber,vasarhelyi}.py` | ✅            | 含内联子函数 + 三维高度感知避障（Stage 13）                                                                                                                                     |
+| `swarm/height_constraint.py`         | ✅            | 建筑物高度感知+高空禁向下（Stage 13）                                                                                                                                           |
+| `math_tools/`                        | ✅            | Rb2i/pos2dist/compute_neighborhood/network_components/compute_swarm_performance                                                                                                 |
+| `control/true_states.py`             | ✅            | 伪真值估计（z_hat 22）                                                                                                                                                          |
+| `simulation/runner.py`               | ✅            | `Simulation` + `FaultEvent`（主线引擎）                                                                                                                                         |
+| `simulation/result_dir.py`           | ✅            | `new_result_dir`/`RESULT_ROOT`（result/<alg>_<ts>/，Stage 10）                                                                                                                  |
+| `visualization/`                     | ✅            | `SwarmViewer` + `map_drawing` + `offline_plots` + `DroneViewer`/`DroneStatePlotter`/`drone_body`（Stage 2/8）+ `path_drawing`/`video_writer`(含 FrameVideoWriter)（Stage 9/11） |
+| `gui/desktop_app.py`                 | ✅            | PySide6 桌面 GUI（Stage 3）+ 每次仿真自动记录 result/ + 交互视角视频（Stage 11）+ 集群中心高度滑杆+方案1防撞（Stage 12）                                                        |
+| `physics/`                           | ✅            | forces_moments_quad/wing + kinematics + sensors + gps（Stage 4/6）                                                                                                              |
+| `control/`                           | ✅            | true_states + pid + autopilot_quad/wing（Stage 4）                                                                                                                              |
+| `guidance/`                          | ✅            | plan_RRT + path_manager_quad/wing + path_follower_quad/wing + dubins（Stage 5/7）                                                                                               |
+| `estimation/`                        | ✅            | lp_filter + estimate_states（LP+2状态EKF，Stage 6；B-11/20/21/22 已修）                                                                                                         |
+| 桩（`NotImplementedError`）          | ⏳            | plot_state·record_video（P12）；path_manager_wing/path_follower_wing                                                                                                           |
 
 ### A.2 关键接口签名（核实版）
 
@@ -1117,13 +1184,14 @@ draw_buildings(ax, map_params, ...) / draw_cylinders(ax, map_params, ...) / set_
 
 ### A.3 易错点更正（相对上一版“有损摘要”的臆断）
 
-| 错误假设 | 真实接口 |
-|---|---|
-| `Drone/Swarm.get_buildings()` | 无此方法；建筑在 `sim.params.map`（`MapParams.buildings_*`） |
-| `compute_swarm_performance(pos_list, swarm, buildings=, env_shape=)` | `(pos_history, vel_history, p_swarm, dirname=None) -> 6 元组` |
+
+| 错误假设                                                                     | 真实接口                                                                                                                  |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `Drone/Swarm.get_buildings()`                                                | 无此方法；建筑在`sim.params.map`（`MapParams.buildings_*`）                                                               |
+| `compute_swarm_performance(pos_list, swarm, buildings=, env_shape=)`         | `(pos_history, vel_history, p_swarm, dirname=None) -> 6 元组`                                                             |
 | `sim.pos_history` / `sim.min_dist_overall` / `state_history[i]["per_drone"]` | `sim.get_pos_history()`；`state_history` 是 `List[str]`；碰撞在 `swarm.collisions_history(T,3)` / `sim.collisions_sum(3)` |
-| `compute_neighborhood(agents, ...)` | `compute_neighborhood(distance_matrix, r_comm, max_neig)` |
-| 源码用裸绝对 `from enums` | 源码用相对 `from ..enums`；入口用 `from SwarmLab_py.xxx` |
+| `compute_neighborhood(agents, ...)`                                          | `compute_neighborhood(distance_matrix, r_comm, max_neig)`                                                                 |
+| 源码用裸绝对`from enums`                                                     | 源码用相对`from ..enums`；入口用 `from SwarmLab_py.xxx`                                                                   |
 
 ### A.4 忠实保留的 MATLAB bug（不改，只记录）
 

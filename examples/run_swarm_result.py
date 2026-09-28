@@ -27,7 +27,7 @@ from SwarmLab_py.simulation import Simulation, FaultEvent, new_result_dir   # no
 from SwarmLab_py.visualization import (              # noqa: E402
     SwarmViewer, VideoWriterWithRate, plot_trajectories, plot_performance,
 )
-from SwarmLab_py.math_tools import compute_swarm_performance                # noqa: E402
+from SwarmLab_py.math_tools import compute_swarm_performance, compute_performance_stats   # noqa: E402
 
 
 def main():
@@ -76,13 +76,17 @@ def main():
     th = np.array(sim.time_history)
     n = min(len(th), pos.shape[0], vel.shape[0])
     metrics = compute_swarm_performance(pos[:n], vel[:n], sim.p_swarm, dirname=rdir)
+    stats = compute_performance_stats(*metrics)
+    np.savez(os.path.join(rdir, "performance_stats.npz"), **stats)
     figs = plot_performance(th[:n], *metrics,
                             collisions_history=sim.swarm.collisions_history[:n],
                             dirname=rdir)
     for f in figs.values():
         plt.close(f)
 
-    print(f"累计碰撞 [机-机, 机-障, min_dist累计] = {np.round(sim.collisions_sum, 2)}")
+    print(f"累计碰撞 [机-机, 机-障] = {np.round(sim.collisions_sum[0:2], 2)}; "
+          f"全程最小建筑距离 = {sim.collisions_sum[2]:.2f}")
+    print("性能统计:", {k: (round(v, 3) if isinstance(v, float) else v) for k, v in stats.items()})
     print("结果目录:", rdir)
     print("生成文件:", sorted(os.listdir(rdir)))
 

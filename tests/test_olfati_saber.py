@@ -132,7 +132,7 @@ def test_collisions_and_end_to_end():
     s, b = _make_swarm([[0.0, 0.5], [0.0, 0.0], [0.0, 0.0]], migration=False)
     vel_cmd, coll = s.update_command(b.p_swarm, b.p_swarm.r_coll, b.p_sim.dt)
     assert math.isclose(coll[0], 1.0)
-    assert coll[2] == 20.0                                   # 无障碍 → min_dist_obs 初值
+    assert math.isinf(coll[2])                               # 无障碍 → min_dist_obs=inf（Stage14）
     # 端到端写入 command + collisions_history
     assert np.allclose(s.drones[0].command[1:4], vel_cmd[:, 0])
     assert s.collisions_history.shape == (1, 3)
