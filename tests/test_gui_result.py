@@ -71,6 +71,15 @@ def test_gui_auto_result():
         win._capture_frame()
     _check("GUI: 抓到帧(>0)", win._video is not None and win._video.nframes > 0)
 
+    # 视频叠加仿真时间：overlay 不改 shape，文本仅落左上角（中央主体不被遮挡）
+    frame = (np.random.default_rng(1).random((120, 160, 3)) * 255).astype(np.uint8)
+    ov = win._overlay_sim_time(frame)
+    diff = (ov != frame).any(axis=2)
+    _check("GUI: overlay 同 shape 且有文本像素", ov.shape == frame.shape and diff.any())
+    h, w = frame.shape[:2]
+    center = diff[int(h * 0.3):, int(w * 0.2):int(w * 0.8)]   # 画面中央主体区
+    _check("GUI: 文本不遮中央主体(仅左上角)", not center.any())
+
     win._on_start_toggled(False)                # 停止 → finalize：关视频 + 存参数图
     files = os.listdir(rd) if rd and os.path.isdir(rd) else []
     _check("GUI: 视频 mp4 已存且非空",

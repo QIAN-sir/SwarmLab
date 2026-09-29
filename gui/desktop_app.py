@@ -370,6 +370,8 @@ class MainWindow(QMainWindow):
         self._view_tick = 0
         self._result_dir = None        # 本次仿真结果目录（result/<alg>_<ts>/）
         self._video = None             # FrameVideoWriter（录 GUI 交互画面）
+        self._pil_font = None          # 视频仿真时间叠加字体缓存
+        self._pil_font_size = 0        # 字体缓存对应的尺寸（随帧高变化重载）
 
         self.timer = QTimer(self)
         self.timer.setInterval(40)
@@ -995,9 +997,38 @@ class MainWindow(QMainWindow):
             buf = qimg.bits()                  # PySide6: memoryview（无需 setsize）
             arr = np.frombuffer(buf, dtype=np.uint8, count=bpl * h)
             arr = arr.reshape(h, bpl)[:, : w * 3].reshape(h, w, 3).copy()
+            arr = self._overlay_sim_time(arr)          # 视频叠加仿真时间(左上角, 不遮主体)
             self._video.add_frame(arr)
         except Exception:                                              # noqa: BLE001
             pass
+
+    def _overlay_sim_time(self, arr):
+        """在帧左上角叠加当前仿真时间（半透明底+白字），便于视频与评价指标按时间对照。
+
+        位置选左上角边缘（3D 主体集群/建筑通常在画面中央），不遮挡仿真画面主体。
+        失败时（无 PIL/字体）原样返回，不影响录制。
+        """
+        c = self.controller
+        if c is None:
+            return arr
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            img = Image.fromarray(arr)
+            d = ImageDraw.Draw(img, "RGBA")
+            text = f"t = {c.time:.2f} s"
+            size = max(14, int(arr.shape[0] * 0.045))
+            if self._pil_font is None or self._pil_font_size != size:
+                import matplotlib.font_manager as fm
+                self._pil_font = ImageFont.truetype(fm.findfont("DejaVu Sans"), size)
+                self._pil_font_size = size
+            bbox = d.textbbox((0, 0), text, font=self._pil_font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            x0, y0 = 10, 10
+            d.rectangle([x0 - 4, y0 - 4, x0 + tw + 6, y0 + th + 6], fill=(0, 0, 0, 110))
+            d.text((x0, y0), text, fill=(255, 255, 255, 255), font=self._pil_font)
+            return np.asarray(img)
+        except Exception:                                              # noqa: BLE001
+            return arr
 
     def _finalize_run(self):
         """仿真结束：关视频 + 存参数图到 result 目录（每次仿真自动记录）。"""
